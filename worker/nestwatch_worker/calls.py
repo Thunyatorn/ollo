@@ -55,8 +55,8 @@ def call_phrase(alert: dict, zone_name: str | None, now: float) -> str:
 
 
 def call_message(alert: dict, zone_name: str | None, now: float) -> str:
-    """'This is NestWatch. A child entered the Stairs area 20 seconds ago and nobody has answered yet. Press 1 if you're on it.'"""
-    return f"This is NestWatch. {call_phrase(alert, zone_name, now)} and nobody has answered yet. Press 1 if you're on it."
+    """'This is Ollo. A child entered the Stairs area 20 seconds ago and nobody has answered yet. Press 1 if you're on it.'"""
+    return f"This is Ollo. {call_phrase(alert, zone_name, now)} and nobody has answered yet. Press 1 if you're on it."
 
 
 def twilio_signature(auth_token: str, url: str, params: dict) -> str:

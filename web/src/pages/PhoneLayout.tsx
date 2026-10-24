@@ -14,7 +14,7 @@ export default function PhoneLayout() {
   ];
   return (
     <div className="phone">
-      <h1 className="phone-title"><Eye size={22} strokeWidth={1.6} />NestWatch</h1>
+      <h1 className="phone-title"><Eye size={22} strokeWidth={1.6} />Ollo</h1>
       <nav className="phone-nav" aria-label="Phone">
         {items.map((it, i) => (
           <Fragment key={it.to}>

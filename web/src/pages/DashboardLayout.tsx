@@ -20,9 +20,9 @@ export default function DashboardLayout() {
     <div className="app-shell">
       <main className="main">
         <header className="topbar">
-          <NavLink className="brand compact-brand" to="/" aria-label="NestWatch monitor">
+          <NavLink className="brand compact-brand" to="/" aria-label="Ollo monitor">
             <Eye size={23} strokeWidth={1.6} />
-            NestWatch
+            Ollo
           </NavLink>
           <nav className="topbar-nav" aria-label="Main">
             {links.map(l => (

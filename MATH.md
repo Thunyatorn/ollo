@@ -1,4 +1,4 @@
-# NestWatch Phase 3: the math behind the vision service
+# Ollo Phase 3: the math behind the vision service
 
 This document explains every calculation the vision service makes, why we chose it, and how we will check it.
 It is written so you can follow it without a math degree, and so you can still argue with it if you have one.

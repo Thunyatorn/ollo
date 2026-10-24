@@ -22,7 +22,7 @@ export default function App() {
     return (
       <div className="phone" style={{ paddingTop: '18vh' }}>
         <div className="card">
-          <h2>{conn.connectionError ? 'Cannot reach NestWatch' : 'Connecting…'}</h2>
+          <h2>{conn.connectionError ? 'Cannot reach Ollo' : 'Connecting…'}</h2>
           <p className="muted">
             {conn.connectionError
               ? 'Check that the Spacetime server is running and this device is on the same network.'

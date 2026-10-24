@@ -229,7 +229,7 @@ class Worker:
             self.stats["acks_by_voice"] = self.stats.get("acks_by_voice", 0) + 1
         except Rejected as e:
             log.warning("voice %s for %s refused: %s", decision, alert_id, e)
-            return "I could not record that. Please open the NestWatch app."
+            return "I could not record that. Please open the Ollo app."
         a = await self.alert(alert_id)
         owner = a["ownerId"] if a else None
         if owner == cg:
@@ -237,7 +237,7 @@ class Worker:
         if owner:
             who = next((c["name"] for c in await self.stdb.sql("SELECT id, name FROM caregiver") if c["id"] == owner), "someone else")
             return f"This alert is already handled by {who}. Thank you."
-        return "I could not record that. Please open the NestWatch app."
+        return "I could not record that. Please open the Ollo app."
 
     # ---------- second opinion ----------
     async def second_opinion(self, alert: dict, frames: list[bytes]) -> None:

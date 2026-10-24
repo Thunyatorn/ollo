@@ -74,8 +74,8 @@ export function useUnhandledCount(): number {
   const [alerts] = useTable(tables.alert);
   const n = alerts.filter(a => ['notified', 'escalated', 'unanswered'].includes(a.status)).length;
   useEffect(() => {
-    document.title = n > 0 ? `(${n}) NestWatch — needs attention` : 'NestWatch';
-    return () => { document.title = 'NestWatch'; };
+    document.title = n > 0 ? `(${n}) Ollo — needs attention` : 'Ollo';
+    return () => { document.title = 'Ollo'; };
   }, [n]);
   return n;
 }

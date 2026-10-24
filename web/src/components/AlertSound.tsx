@@ -53,7 +53,7 @@ export default function AlertSound() {
       if (!on || a.severity === 'low') continue;
       beeps(a.severity === 'high' ? 880 : 620, a.severity === 'high' ? 3 : 1);
       if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
-        new Notification(`NestWatch: ${a.severity} alert`, { body: eventLabel(a.eventType), tag: a.id });
+        new Notification(`Ollo: ${a.severity} alert`, { body: eventLabel(a.eventType), tag: a.id });
       }
     }
   }, [alerts, ready, on]);

@@ -38,7 +38,7 @@ def create_app(worker, checker, keyframes, settings, start_loop: bool = True) ->
         if task:
             task.cancel()
 
-    app = FastAPI(title="NestWatch worker", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+    app = FastAPI(title="Ollo worker", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     extra = [re.escape(o.strip().rstrip("/")) for o in settings.app_origins.split(",") if o.strip()]
     app.add_middleware(CORSMiddleware, allow_origin_regex="^(" + "|".join([LOCAL_ORIGIN, *extra]) + ")$",
                        allow_methods=["GET", "POST"], allow_headers=["authorization", "content-type"])
@@ -169,7 +169,7 @@ def create_app(worker, checker, keyframes, settings, start_loop: bool = True) ->
         form = await signed_form(request, job, t)
         pressed = form.get("Digits", "") == "1"
         await worker.on_call_result(job, "pressed_1" if pressed else "no_answer")
-        say = "Thank you. You are handling the alert now." if pressed else "Okay. NestWatch will keep trying other staff."
+        say = "Thank you. You are handling the alert now." if pressed else "Okay. Ollo will keep trying other staff."
         return Response(f'<?xml version="1.0" encoding="UTF-8"?><Response><Say>{say}</Say><Hangup/></Response>',
                         media_type="application/xml")
 

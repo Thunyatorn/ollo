@@ -1,4 +1,4 @@
-# Recording footage to tune NestWatch (M9)
+# Recording footage to tune Ollo (M9)
 
 The detectors were tuned on simulations and on adults in public datasets. Their thresholds are only as good as the
 footage they are checked against, so the last step is your own room, your camera, and (with consent) people moving the
