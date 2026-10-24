@@ -18,6 +18,7 @@ interface Props {
 export function useAlertActions(alert: Alert, me: Caregiver, via: 'dashboard' | 'phone_app') {
   const ack = useReducer(reducers.acknowledgeAlert);
   const close = useReducer(reducers.closeAlert);
+  const decline = useReducer(reducers.declineAlert);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -30,6 +31,7 @@ export function useAlertActions(alert: Alert, me: Caregiver, via: 'dashboard' | 
   return {
     error, busy,
     takeIt: () => run(() => ack({ alertId: alert.id, caregiverId: me.id, via })),
+    cannotRespond: () => run(() => decline({ alertId: alert.id, caregiverId: me.id, via })),
     resolve: (reason: string) => run(() => close({ alertId: alert.id, reason })),
     falseAlarm: () => run(async () => {
       if (!alert.ownerId) await ack({ alertId: alert.id, caregiverId: me.id, via });
@@ -44,6 +46,7 @@ export default function AlertCard({ alert, me, caregivers, via, zoneName, childL
   const owner = caregivers.find(c => c.id === alert.ownerId);
   const isOwned = alert.status === 'owned';
   const iOwnIt = alert.ownerId === me.id;
+  const canDecline = !isOwned && (alert.status === 'notified' || alert.status === 'escalated');
 
   const secs = alert.nextEscalationAt ? Math.max(0, Math.ceil((tsMs(alert.nextEscalationAt) - now) / 1000)) : null;
   const where = zoneName ? ` — ${zoneName}` : '';
@@ -79,7 +82,8 @@ export default function AlertCard({ alert, me, caregivers, via, zoneName, childL
           )}
         </div>
         {!isOwned && <button className="btn big" onClick={actions.takeIt} disabled={actions.busy}>I'm on it</button>}
-        {iOwnIt && <button className="btn big secondary" onClick={() => actions.resolve('resolved by caregiver')} disabled={actions.busy}>All clear — close alert</button>}
+        {canDecline && <button className="btn secondary" onClick={actions.cannotRespond} disabled={actions.busy}>I can't respond</button>}
+        {isOwned && <button className="btn big secondary" onClick={() => actions.resolve('resolved by caregiver')} disabled={actions.busy}>{iOwnIt ? 'All clear — close alert' : 'Mark resolved'}</button>}
         {!isOwned && <button className="btn secondary" onClick={actions.falseAlarm} disabled={actions.busy}>False alarm</button>}
         {actions.error && <div className="banner" role="alert">{actions.error}</div>}
       </div>
@@ -113,7 +117,8 @@ export default function AlertCard({ alert, me, caregivers, via, zoneName, childL
           <td colSpan={2}>
             <div className="actions">
               {!isOwned && <button className="btn" onClick={actions.takeIt} disabled={actions.busy}>I'm on it</button>}
-              {iOwnIt && <button className="btn secondary" onClick={() => actions.resolve('resolved by caregiver')} disabled={actions.busy}>Close alert</button>}
+              {canDecline && <button className="btn secondary" onClick={actions.cannotRespond} disabled={actions.busy} title="Skip the wait: the next person is told now">I can't respond</button>}
+              {isOwned && <button className="btn secondary" onClick={() => actions.resolve('resolved by caregiver')} disabled={actions.busy}>{iOwnIt ? 'Close alert' : 'Mark resolved'}</button>}
               {!isOwned && <button className="btn secondary" onClick={actions.falseAlarm} disabled={actions.busy}>False alarm</button>}
             </div>
             {actions.error && <div className="banner" role="alert">{actions.error}</div>}

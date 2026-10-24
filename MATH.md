@@ -1032,3 +1032,35 @@ Adult-tagged tracks are never reported. Total delay from the last sighting: abou
 the apps and never buzzes or escalates. Tests: a child who vanishes for good raises one alert 8.5 to 9.5 s into a run
 where they disappear at 6 s; hidden 2.2 s raises none; one second of detections raises none. Not yet measured on footage
 of a real room: the alerts per hour will depend on blind spots and doorways, so tune `near_m` and `grace_s` there.
+
+### 8.1c The reference build's second fall path (2026-10-24)
+
+The team's reference build (commit 17cca7a) also calls a fall when the body height collapses (from at least 0.85 to at most
+0.70 of standing height within 1.5 s) and stays low and not lying wide for 1.5 s, begun with a hand at the floor: a fall onto
+hands and knees toward the camera. Added as `FallConfig.collapse_path`, measured with `scripts/tune_falls.py`'s people split:
+
+| | Tuning people: caught / false | Held-out people: caught / false |
+| --- | --- | --- |
+| Current rule | 84/102 / 16 | 18/26 / 7 |
+| + collapse path | 84/102 / 23 | 19/26 / 9 |
+
+Seven more false alarms and no extra catch on the tuning people; on the held-out people one more catch for two more false
+alarms. A hand on the floor while low is exactly kneeling and picking something up, our main false alarms (8.1b). Off by default.
+
+### 8.6 Hands at the throat, rhythmic movement, stillness (2026-10-24)
+
+Ported from the reference build's `server/events.py` into `detectors/behaviour.py` (lengths in the person's torso length, which
+is about a third of the reference's body length, so its 0.02 and 0.04 body lengths become 0.06 and 0.12 torso lengths):
+
+| Event | Rule | Severity |
+| --- | --- | --- |
+| `possible_distress` | both wrists within 0.25 torso lengths of the throat point (35% of the way from the shoulders to the nose); CUSUM k = 0.45, h = 0.8 evidence-seconds, so about 1.5 s of both hands; one hand alone (score 0.4) never builds up | high |
+| `rhythmic_movement` | at least 8 frames a second; over 6 s, at least two of wrists and ankles whose movement (drift removed) is above 0.06 torso lengths RMS with its strongest frequency in 1-5 Hz and over 60% of its power at that peak and its first harmonic; CUSUM k = 0.3, h = 3 | high |
+| `stillness` | mean keypoint movement over 2 s under 0.12 torso lengths for 30 s; never during the `nap_time` schedule; only for a person the floor tracker follows, so a coat or doll cannot raise it | medium |
+
+What was measured: synthetic tests (both hands alert at 1.3 to 1.8 s; one hand, a brief touch, waving at 0.5 Hz, pose jitter,
+walking, 5 frames a second and nap time do not alert). On all 260 OmniFall clips (38 minutes: walking, sitting, kneeling, picking
+up, hopping and 128 falls) the three rules raised **no** alert. With zero events in 0.63 hours the 95% upper bound is about 4.7
+false alarms an hour, so this is a weak bound, not a rate. No labelled choking or seizure footage exists in these datasets, so
+**how often a real event is caught is unknown**; these remain "check now" signals, and stillness (30 s) could not be exercised
+on clips this short.

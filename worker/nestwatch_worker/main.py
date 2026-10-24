@@ -6,7 +6,7 @@ import uvicorn
 
 from .ai import Claude
 from .app import create_app
-from .calls import SimulatedCalls, TwilioCalls
+from .calls import AgentCalls, FallbackCalls, SimulatedCalls, TwilioCalls
 from .config import Settings
 from .jobs import Worker
 from .spacetime import Spacetime
@@ -23,8 +23,13 @@ def build(s: Settings):
     if s.claude_enabled:
         from anthropic import AsyncAnthropic
         claude = Claude(AsyncAnthropic(), s.fast_model, s.strong_model)
-    calls = TwilioCalls(s) if s.twilio_ready() else SimulatedCalls(s.sim_outcome, s.sim_ring_s)
-    if s.calls_enabled and not s.twilio_ready():
+    if s.agent_ready():
+        calls = FallbackCalls(AgentCalls(s), TwilioCalls(s)) if s.twilio_ready() else AgentCalls(s)
+    elif s.twilio_ready():
+        calls = TwilioCalls(s)
+    else:
+        calls = SimulatedCalls(s.sim_outcome, s.sim_ring_s)
+    if s.calls_enabled and isinstance(calls, SimulatedCalls):
         log.warning("CALLS_ENABLED is set but Twilio/Cartesia settings are incomplete: calls stay SIMULATED")
     keyframes = KeyframeStore(s.keyframe_ttl_s)
     worker = Worker(stdb, s, claude, calls, keyframes)

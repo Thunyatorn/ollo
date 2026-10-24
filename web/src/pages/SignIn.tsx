@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Eye } from 'lucide-react';
 import { useTable, useReducer } from 'spacetimedb/react';
 import { reducers, tables } from '../module_bindings';
 
@@ -24,9 +25,9 @@ export default function SignIn() {
   }
 
   return (
-    <div className="phone">
+    <div className="phone" style={{ paddingTop: '14vh' }}>
       <form className="card stack" onSubmit={submit}>
-        <h1>NestWatch</h1>
+        <h1 className="phone-title"><Eye size={22} strokeWidth={1.6} />NestWatch</h1>
         <p className="muted">Sign in to see alerts and the room.</p>
         <div>
           <label htmlFor="who">Who are you?</label>

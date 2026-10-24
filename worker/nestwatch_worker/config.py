@@ -52,11 +52,18 @@ class Settings:
     cartesia_voice: str = field(default_factory=lambda: _env("CARTESIA_VOICE_ID"))
     cartesia_model: str = field(default_factory=lambda: _env("CARTESIA_MODEL_ID", "sonic-3.6"))
     cartesia_version: str = field(default_factory=lambda: _env("CARTESIA_VERSION", "2026-08-14"))
+    cartesia_agent_id: str = field(default_factory=lambda: _env("CARTESIA_AGENT_ID"))
+    cartesia_from_number_id: str = field(default_factory=lambda: _env("CARTESIA_FROM_NUMBER_ID"))
+    voice_webhook_secret: str = field(default_factory=lambda: _env("VOICE_WEBHOOK_SECRET"))
     sim_outcome: str = field(default_factory=lambda: _env("SIM_CALL_OUTCOME", "no_answer"))   # no_answer | press1 | error
     sim_ring_s: float = field(default_factory=lambda: float(_env("SIM_RING_S", "6")))
     call_retries: int = 1                 # one retry when placing a call fails outright (CLUADE.md failure table)
     call_retry_delays_s: tuple = (3.0,)
 
+    def agent_ready(self) -> bool:
+        need = [self.cartesia_key, self.cartesia_version, self.cartesia_agent_id, self.cartesia_from_number_id, self.voice_webhook_secret]
+        return self.calls_enabled and self.call_provider == "cartesia_agent" and all(need) and self.public_base_url.startswith("https://")
+
     def twilio_ready(self) -> bool:
         need = [self.twilio_sid, self.twilio_token, self.twilio_from, self.cartesia_key, self.cartesia_voice, self.cartesia_model, self.cartesia_version]
-        return self.calls_enabled and self.call_provider == "twilio" and all(need) and self.public_base_url.startswith("https://")
+        return self.calls_enabled and self.call_provider in ("twilio", "cartesia_agent") and all(need) and self.public_base_url.startswith("https://")

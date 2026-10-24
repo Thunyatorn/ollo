@@ -46,6 +46,20 @@ admin-only `escalate_now` reducer, run with the `spacetime` command line tool as
 
 `flows.py call-failure` needs the worker started with `SIM_CALL_OUTCOME=error`.
 
+## Voice agent and "I can't respond"
+
+With `CALL_PROVIDER=cartesia_agent` (and `CARTESIA_AGENT_ID`, `CARTESIA_FROM_NUMBER_ID`, `VOICE_WEBHOOK_SECRET`), a Cartesia voice agent
+calls the backup instead of the keypad call. The backup says "I'm on it" (acknowledged `via voice`) or "I can't" (the alert
+escalates at once). The agent's tool posts to `/webhooks/voice/ack` with the bearer secret and a one-time token we gave the call
+(only its hash is kept, it works once, it expires in 15 minutes). If the agent call cannot be placed, the same step falls back
+to the keypad call. The agent itself is set up in the Cartesia console (see the team build's `docs/CARTESIA_AGENT.md`); this
+path is tested against mocked HTTP only, not a real Cartesia account.
+
+On the dashboard and the phone, **I can't respond** does the same for a caregiver: the next step (backup call, then all
+staff and the local alarm) starts now instead of waiting out the timer (`decline_alert` in the module).
+
+`/health` also shows `claude_cost_usd` and `claude_calls` since the worker started (list prices).
+
 ## Real calls
 
 Set `CALLS_ENABLED=true`, the Twilio and Cartesia values and `PUBLIC_BASE_URL` (an https tunnel to the worker, used

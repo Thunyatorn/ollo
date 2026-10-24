@@ -160,3 +160,16 @@ async def test_second_opinion_hard_time_limit():
     alert = {"trackId": "t2", "eventType": "unsupervised", "zoneId": "", "severity": "medium", "createdAt": 1000.0}
     with pytest.raises(asyncio.TimeoutError):
         await c.second_opinion(alert, None, EVENTS, [b"\xff\xd8"], timeout=0.05)
+
+
+async def test_cost_is_added_up_from_token_usage():
+    resp = fake_response(json.dumps({"summary": "s", "lines": []}))
+    resp.usage = SimpleNamespace(input_tokens=2000, output_tokens=500)
+    resp.model = "claude-opus-5-5"
+    c = ai.Claude(FakeClient(resp), "claude-haiku-4-5", "claude-opus-5-5")
+    alert = {"trackId": "t4", "eventType": "zone_entry", "zoneId": "z", "severity": "high", "createdAt": 1000.0}
+    await c.report(alert, "Stairs", EVENTS)
+    assert c.calls == 1 and abs(c.cost_usd - (2000 * 4 + 500 * 20) / 1e6) < 1e-12        # $0.018
+    resp.model = "claude-unknown-9"
+    await c.report(alert, "Stairs", EVENTS)
+    assert c.unpriced == 1 and abs(c.cost_usd - 0.018) < 1e-12

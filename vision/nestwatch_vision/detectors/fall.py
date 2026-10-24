@@ -30,6 +30,16 @@ class FallConfig:
     gap_tolerance_s: float = 0.5     # missing detections up to this long do not reset "low"
     refractory_s: float = 10.0       # one alert per fall
     max_gap_s: float = 1.0           # a track unseen this long is forgotten
+    # The reference build's second path (commit 17cca7a, server/events.py "path B"): the body height collapses and the person
+    # stays low, not wide, having started with a hand at the floor (a fall onto hands and knees, toward the camera).
+    # Off by default: measured in MATH.md 8.1c.
+    collapse_path: bool = False
+    collapse_from: float = 0.85      # height was at least this share of standing height ...
+    collapse_to: float = 0.70        # ... and fell to this share or less ...
+    collapse_window_s: float = 1.5   # ... within this time
+    collapse_low: float = 0.75       # then stays at or below this share
+    collapse_hold_s: float = 1.5
+    hand_floor: float = 0.15         # a wrist within this share of standing height above the box bottom
 
 
 @dataclass
@@ -51,6 +61,9 @@ class _Track:
     low_since: float | None = None
     low_seen: float = -math.inf
     fired_at: float = -math.inf
+    collapse_at: float = -math.inf
+    hands_since: float | None = None
+    hands_seen: float = -math.inf
 
     def standing_height(self) -> float:
         if self.upright:
@@ -76,7 +89,7 @@ def _measure(tr, p, t, h, w, H, angle) -> dict:
     hist = [(tt, top) for tt, top, _ in tr.hist if t - 3.0 <= tt <= t]
     speed = max([(b[1] - a[1]) / H / (b[0] - a[0]) for i, a in enumerate(hist) for b in hist[i + 1:] if b[0] - a[0] >= 0.25] or [0.0])
     tops = [top for _, top in hist]
-    return {"h_ratio": h / H, "aspect": w / h, "angle": angle, "since_low": t - tr.low_since, "drop_lag": t - tr.drop_at,
+    return {"h_ratio": h / H, "aspect": w / h, "angle": angle, "since_low": None if tr.low_since is None else t - tr.low_since, "drop_lag": t - tr.drop_at,
             "peak_speed": speed,                                                          # fastest downward move of the top, standing heights per second
             "drop_total": (tops[-1] - min(tops)) / H if tops else 0.0,                    # how far the top fell in the last 3 s
             "hip_rel": (y2 - np.mean(hips)) / h if hips else None,                       # hip height above the box bottom, in box heights
@@ -92,6 +105,21 @@ def _iou(a, b):
 
 
 class FallDetector:
+    def _collapse(self, tr, p, t, h, w, H) -> bool:
+        """Path B: a collapse of the box height, then low and not lying wide, begun with a hand at the floor."""
+        c = self.cfg
+        recent = [hh for tt, _, hh in tr.hist if t - c.collapse_window_s <= tt <= t]
+        if recent and max(recent) >= c.collapse_from * H and h <= c.collapse_to * H:
+            tr.collapse_at = t
+        y2 = float(p.box[3])
+        hand = any(p.kpts[i, 2] >= 0.3 and float(p.kpts[i, 1]) >= y2 - c.hand_floor * H for i in (9, 10))
+        low = h <= c.collapse_low * H and w / h <= c.low_aspect
+        if low and (hand or tr.hands_since is not None):
+            tr.hands_since, tr.hands_seen = (tr.hands_since if tr.hands_since is not None else t), t
+        elif tr.hands_since is not None and t - tr.hands_seen > c.gap_tolerance_s:
+            tr.hands_since = None
+        return tr.hands_since is not None and t - tr.hands_since >= c.collapse_hold_s and t - tr.collapse_at <= 3.0
+
     def __init__(self, cfg: FallConfig | None = None):
         self.cfg = cfg or FallConfig()
         self.tracks: list[_Track] = []
@@ -144,7 +172,8 @@ class FallDetector:
                 tr.low_since = None
             # The body tilts first (low by angle or width) and the top drops a moment later, so the drop may come just
             # before OR during the low phase; it just has to belong to this episode.
-            if (tr.low_since is not None and t - tr.low_since >= c.hold_s and tr.low_since - c.recent_drop_s <= tr.drop_at <= t
+            path_b = c.collapse_path and self._collapse(tr, p, t, h, w, H)
+            if ((path_b or (tr.low_since is not None and t - tr.low_since >= c.hold_s and tr.low_since - c.recent_drop_s <= tr.drop_at <= t))
                     and t - tr.fired_at > c.refractory_s):
                 tr.fired_at = t
                 events.append(FallEvent(tr.id, t, p.box, _measure(tr, p, t, h, w, H, angle)))

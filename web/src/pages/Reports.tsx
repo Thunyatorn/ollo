@@ -2,15 +2,21 @@ import { Link, useParams } from 'react-router-dom';
 import { useTable } from 'spacetimedb/react';
 import { tables } from '../module_bindings';
 import ReportView from '../components/ReportView';
+import { useReportTitle } from '../lib';
 
 export default function Reports() {
   const { id } = useParams();
   const [reports] = useTable(tables.report);
+  const title = useReportTitle();
   const current = id ? reports.find(r => r.id === id) : undefined;
 
   return (
-    <div className="stack">
-      <h1>Reports</h1>
+    <section className="secondary-page stack">
+      <div>
+        <span className="eyebrow">RECORDS</span>
+        <h1>Reports</h1>
+        <p className="page-lead">A report is written for every closed alert; each line cites a logged event.</p>
+      </div>
       {reports.length === 0 ? (
         <div className="card"><p className="muted">No reports yet. A report is written after an alert is closed.</p></div>
       ) : (
@@ -18,7 +24,7 @@ export default function Reports() {
           <div className="card">
             {[...reports].reverse().map(r => (
               <div key={r.id} className="row" style={{ padding: '.5rem 0', borderBottom: '1px solid var(--line)' }}>
-                <Link to={`/reports/${r.id}`} className="grow">{r.kind === 'daily' ? 'Daily summary' : `Incident ${r.alertId ?? ''}`}</Link>
+                <Link to={`/reports/${r.id}`} className="grow">{title(r)}</Link>
                 <span className="pill off">{r.status}</span>
               </div>
             ))}
@@ -26,6 +32,6 @@ export default function Reports() {
           {current ? <ReportView report={current} /> : <div className="card muted">Choose a report.</div>}
         </div>
       )}
-    </div>
+    </section>
   );
 }

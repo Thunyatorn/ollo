@@ -36,7 +36,6 @@ export default function Caregivers() {
 
   return (
     <div className="stack">
-      <h1>Caregivers</h1>
       <div className="room-layout">
         <div className="card">
           <table>

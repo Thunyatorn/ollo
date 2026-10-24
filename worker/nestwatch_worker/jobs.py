@@ -18,7 +18,7 @@ from datetime import datetime
 import httpx
 
 from . import ai
-from .calls import NotRetryable, call_message
+from .calls import NotRetryable, call_message, call_phrase
 from .spacetime import Rejected, Spacetime, opt, quoted
 from .store import KeyframeStore
 
@@ -150,7 +150,12 @@ class Worker:
             log.error("%s: no phone number for %s", jid, job["caregiverId"])
             await self.set_job(jid, "failed")
             return
-        text = call_message(alert, await self.zone_name(alert["zoneId"]), self.clock())
+        zone = await self.zone_name(alert["zoneId"])
+        text = call_message(alert, zone, self.clock())
+        rooms = await self.stdb.sql("SELECT name FROM room")
+        names = {c["id"]: c["name"] for c in await self.stdb.sql("SELECT id, name FROM caregiver")}
+        info = {"room": rooms[0]["name"] if rooms else "the room", "alert": call_phrase(alert, zone, self.clock()),
+                "caregiver": names.get(job["caregiverId"], "caregiver"), "alert_id": alert["id"], "caregiver_id": job["caregiverId"]}
         delays = self.s.call_retry_delays_s
         self._job_alert[jid] = alert["id"]
         for older, call_id in [(j, c) for j, c in self.live_calls.items() if j != jid and self._job_alert.get(j) == alert["id"]]:
@@ -161,7 +166,7 @@ class Worker:
         for attempt in range(1 + self.s.call_retries):
             self.live_calls[jid] = None                         # results may arrive before place() returns
             try:
-                self.live_calls[jid] = await self.calls.place(jid, contact["phone"], text, self.on_call_result)
+                self.live_calls[jid] = await self.calls.place(jid, contact["phone"], text, self.on_call_result, info)
                 self.stats["calls_placed"] += 1
                 await self.set_job(jid, "ringing")
                 return
@@ -205,6 +210,34 @@ class Worker:
             log.info("%s: backup pressed 1; %s acknowledged by phone", job_id, job["alertId"])
         except Rejected as e:
             log.warning("acknowledge by phone refused (probably closed already): %s", e)
+
+    async def on_voice_decision(self, token: str, decision: str) -> str:
+        """The voice agent's tool call: the caregiver said "I'm on it" (acknowledge) or "I can't" (decline). Returns the one
+        plain sentence the agent should say back. Each token works once."""
+        rec = self.calls.take_token(token) if hasattr(self.calls, "take_token") else None
+        if rec is None:
+            return "Sorry, this call is no longer valid."
+        jid, alert_id, cg = rec["job"], rec["alert"], rec["caregiver"]
+        self.live_calls.pop(jid, None)
+        try:
+            if decision == "decline":
+                await self.stdb.call("decline_alert", [alert_id, cg, "voice"])
+                await self.set_job(jid, "failed")
+                return "Understood. The next person is being told now. Thank you."
+            await self.set_job(jid, "answered")                 # first: the acknowledgement below cancels open jobs
+            await self.stdb.call("acknowledge_alert", [alert_id, cg, "voice"])
+            self.stats["acks_by_voice"] = self.stats.get("acks_by_voice", 0) + 1
+        except Rejected as e:
+            log.warning("voice %s for %s refused: %s", decision, alert_id, e)
+            return "I could not record that. Please open the NestWatch app."
+        a = await self.alert(alert_id)
+        owner = a["ownerId"] if a else None
+        if owner == cg:
+            return "Acknowledged. You are now responsible for this alert. Thank you."
+        if owner:
+            who = next((c["name"] for c in await self.stdb.sql("SELECT id, name FROM caregiver") if c["id"] == owner), "someone else")
+            return f"This alert is already handled by {who}. Thank you."
+        return "I could not record that. Please open the NestWatch app."
 
     # ---------- second opinion ----------
     async def second_opinion(self, alert: dict, frames: list[bytes]) -> None:
@@ -276,6 +309,7 @@ class Worker:
         self.stats["dailies"] += 1
 
     def health(self) -> dict:
-        return {"spacetime": "connected" if self.online else "unreachable", "last_poll_ok": self.last_poll_ok,
+        cost = {"claude_cost_usd": round(self.claude.cost_usd, 4), "claude_calls": self.claude.calls} if self.claude else {}
+        return {"spacetime": "connected" if self.online else "unreachable", "last_poll_ok": self.last_poll_ok, **cost,
                 "live_calls": len(self.live_calls), "running_jobs": len(self._tasks), "key_frames": len(self.keyframes),
                 **self.stats}

@@ -16,8 +16,12 @@ export default function Rules() {
   const when = (z: (typeof zones)[number]) => z.schedule.named ? z.schedule.named.replace(/_/g, ' ') : z.schedule.startMin != null ? 'set hours' : 'always';
 
   return (
-    <div className="stack">
-      <h1>Rules</h1>
+    <section className="secondary-page stack">
+      <div>
+        <span className="eyebrow">MAKE NESTWATCH YOURS</span>
+        <h1>Rules</h1>
+        <p className="page-lead">Say where children should not go, and when. Nothing is enforced until you confirm it.</p>
+      </div>
       <RuleForm />
       <div className="card">
         <h2>Active and draft rules:</h2>
@@ -43,6 +47,6 @@ export default function Rules() {
           </table>
         )}
       </div>
-    </div>
+    </section>
   );
 }

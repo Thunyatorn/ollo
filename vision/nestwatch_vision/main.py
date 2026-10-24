@@ -33,7 +33,9 @@ from .sync import SpacetimeHttp, SpacetimeSink
 from .zones import ZoneCache
 
 BANNERS = {"fall": "POSSIBLE FALL", "zone_entry": "CHILD IN A RESTRICTED AREA", "zone_entry_predicted": "CHILD HEADING INTO A RESTRICTED AREA",
-           "child_not_visible": "CHILD NOT VISIBLE", "unsupervised": "CHILD WITHOUT AN ADULT NEARBY"}
+           "child_not_visible": "CHILD NOT VISIBLE", "unsupervised": "CHILD WITHOUT AN ADULT NEARBY",
+           "possible_distress": "POSSIBLE DISTRESS: HANDS AT THE THROAT", "rhythmic_movement": "REPEATED SHAKING MOVEMENT",
+           "stillness": "CHILD NOT MOVING"}
 log = logging.getLogger("nestwatch")
 
 

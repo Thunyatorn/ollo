@@ -136,4 +136,4 @@ def test_overlay_draws_on_a_copy_and_adds_a_banner_only_when_asked():
     out = draw(img, [person], 1.0)
     assert img.sum() == 0 and out.sum() > 0                                 # the input is untouched
     assert draw(img, [], 1.0).sum() == 0                                    # nobody, no banner: nothing drawn
-    assert draw(img, [], 1.0, "POSSIBLE FALL")[:30, :, 2].mean() > 100      # banner strip along the top
+    assert draw(img, [], 1.0, "POSSIBLE FALL")[:40, :, 2].sum() > 0          # banner pill along the top

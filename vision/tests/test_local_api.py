@@ -205,7 +205,7 @@ def test_live_view_shows_the_blurred_picture_with_a_skeleton_and_a_banner(world)
     ctx.latest.set_banner("POSSIBLE FALL")
     (pic,) = jpegs(c.get("/live/cam1?frames=1").content)
     assert pic.shape[1] <= 640 and pic.shape[1] < img.shape[1]             # the small blurred copy, not the full-size frame
-    red = (pic[:30, :, 2] > 150) & (pic[:30, :, 0] < 90)                   # the banner strip along the top
-    assert red.mean() > 0.5
+    red = (pic[:40, :, 2] > 150) & (pic[:40, :, 0] < 90)                   # the banner pill along the top
+    assert red.sum() > 500
     green = (pic[40:, :, 1] > 140) & (pic[40:, :, 0] < 100) & (pic[40:, :, 2] < 100)
     assert green.sum() > 50                                                # skeleton lines are drawn

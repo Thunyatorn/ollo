@@ -38,3 +38,4 @@ worker/.env
 worker/.venv/
 worker/.flows-*
 vision/certs/
+.run/

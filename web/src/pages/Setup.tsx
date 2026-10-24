@@ -85,7 +85,6 @@ export default function Setup() {
 
   return (
     <div className="stack">
-      <h1>Setup</h1>
       {msg && <div className="banner" role="status">{msg}</div>}
 
       <form className="card row" onSubmit={e => { e.preventDefault(); guard(() => upsertRoom({ id: room?.id ?? 'main', name: rName, widthM: rW, heightM: rH, floorPlan: room?.floorPlan ?? '' }), 'Room saved.'); }}>
