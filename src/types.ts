@@ -15,6 +15,7 @@ export interface Incident {
   media_time_ms?: number;
   media_end_time_ms?: number;
   source_key?: string;
+  camera_id?: string;
   epoch?: number;
   primary_due_at?: number;
   backup_due_at?: number;
@@ -33,6 +34,24 @@ export interface Incident {
     model: string;
     cost_usd: number | null;
   };
+}
+/** SRC-5: one server camera; cam-01 is the session source. */
+export interface CameraSummary {
+  id: string;
+  room_label: string;
+  health: string;
+  last_frame_at: number | null;
+  tracking?: string;
+  detector?: string;
+  analysis_fps?: number;
+  people?: number;
+  primary: boolean;
+  capture?: {
+    source: string;
+    status: "connecting" | "live" | "offline";
+    camera_fps: number;
+    error: string | null;
+  } | null;
 }
 export interface LookoutState {
   session: {
@@ -60,6 +79,7 @@ export interface LookoutState {
       error: string | null;
     } | null;
   };
+  cameras?: CameraSummary[];
   incidents: Incident[];
   caregivers: {
     id: string;

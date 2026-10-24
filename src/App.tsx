@@ -38,6 +38,7 @@ import type { LookoutState } from "./types";
 import { initialState, request } from "./api";
 import EventTrace from "./EventTrace";
 import CameraPicker from "./CameraPicker";
+import LiveCameras from "./LiveCameras";
 import { demoIncidents } from "./demoIncidents";
 import FullscreenControls from "./FullscreenControls";
 import usePlaybackShortcuts from "./usePlaybackShortcuts";
@@ -190,6 +191,7 @@ export default function App() {
     [cameraSpec, setCameraSpec] = useState(""),
     [cameraMessage, setCameraMessage] = useState(""),
     [serverFrame, setServerFrame] = useState(""),
+    [focusCamera, setFocusCamera] = useState("cam-01"),
     [muted, setMuted] = useState(true),
     [settingsTab, setSettingsTab] = useState("General"),
     [form, setForm] = useState({
@@ -236,10 +238,16 @@ export default function App() {
   const currentSourceKey = sourceType === "illustration" ? "fixture" : sourceType === "recording" ? state.session.media_id : sourceType === "server" ? "server_camera" : "webcam";
   const mockIncidents = room !== 0 || sourceType === "illustration" ? demoIncidents(room) : [];
   const cameraIncidents = [
-    ...(room === 0 && sourceType !== "illustration" ? datedState.incidents.filter(i => !i.source_key || i.source_key === currentSourceKey) : []),
+    ...(room === 0 && sourceType !== "illustration" ? datedState.incidents.filter(i => !i.source_key || i.source_key === currentSourceKey || (sourceType === "server" && !!i.camera_id && i.camera_id !== "cam-01")) : []),
     ...mockIncidents.filter(i => !reviewDate || incidentDate(i.opened_at) === reviewDate),
   ].sort((a, b) => (a.media_time_ms ?? 0) - (b.media_time_ms ?? 0));
   const traceState = { ...datedState, incidents: cameraIncidents };
+  // SRC-5: with server cameras, the stage shows the focused camera's picture and health.
+  const liveCameras = sourceType === "server" ? state.cameras || [] : [];
+  const focused = liveCameras.find(c => c.id === focusCamera);
+  const view = focused ? { ...state.camera, health: focused.health, analysis_fps: focused.analysis_fps, detector: focused.detector, capture: focused.capture, room_label: focused.room_label } : state.camera;
+  // Zones, landmarks and calibration are drawn on cam-01's picture only.
+  const showSetup = sourceType !== "server" || focusCamera === "cam-01";
   const timelineMarkers = cameraIncidents.filter(i => i.media_time_ms !== undefined).map(i => ({ id: i.id, time: i.media_time_ms! / 1000, endTime: i.media_end_time_ms !== undefined ? i.media_end_time_ms / 1000 : i.resolved_at ? i.media_time_ms! / 1000 + Math.max(0, (new Date(i.resolved_at).getTime() - new Date(typeof i.opened_at === "number" ? i.opened_at * 1000 : i.opened_at).getTime()) / 1000) : undefined, title: i.title, demo: !!i.demo_response }));
   const playheadIncidentId = timelineMarkers.find(marker =>
     marker.endTime !== undefined && position >= marker.time && position <= marker.endTime
@@ -426,7 +434,8 @@ export default function App() {
       try {
         const s = await request<LookoutState>("/state", undefined, "GET");
         if (live) {
-          setState(s);
+          // With server cameras, overlays come with each long-polled picture (they match the focused camera).
+          setState(prev => s.session.source_type === "server_camera" ? { ...s, overlays: prev.overlays } : s);
           setConnected(true);
           if (!settingsHydrated.current) {
             settingsHydrated.current = true;
@@ -519,7 +528,7 @@ export default function App() {
       let after = -1;
       while (!abort.signal.aborted) {
         try {
-          const r = await fetch(`/api/camera/frame?after=${after}`, {
+          const r = await fetch(`/api/camera/frame?camera=${focusCamera}&after=${after}`, {
             signal: abort.signal,
           });
           if (r.status === 204) continue;
@@ -544,7 +553,7 @@ export default function App() {
       }
     })();
     return () => abort.abort();
-  }, [sourceType, connected]);
+  }, [sourceType, connected, focusCamera]);
   async function scenario(kind: string) {
     setScenarioOpen(false);
     stream.current?.getTracks().forEach((t) => t.stop());
@@ -811,6 +820,7 @@ export default function App() {
       if (source.startsWith("blob:")) URL.revokeObjectURL(source);
       setSource("");
       setServerFrame("");
+      setFocusCamera("cam-01");
       setSourceType("server");
       setRoom(0);
       setPosition(0);
@@ -1029,7 +1039,7 @@ export default function App() {
                   <div className="camera-toolbar">
                     <div>
                       <Video size={16} />
-                      <CameraPicker rooms={rooms} selected={room} onSelect={index => { setRoom(index); setSelectedIncident(null); }} />
+                      {liveCameras.length > 1 ? <CameraPicker rooms={liveCameras.map(c => ({ id: c.id, name: c.room_label }))} selected={Math.max(0, liveCameras.findIndex(c => c.id === focusCamera))} onSelect={index => setFocusCamera(liveCameras[index].id)} /> : <CameraPicker rooms={rooms} selected={room} onSelect={index => { setRoom(index); setSelectedIncident(null); }} />}
                     </div>
                     <div>
                       {room === 0 && sourceType !== "illustration" && (
@@ -1059,7 +1069,7 @@ export default function App() {
                     </div>
                   </div>
                   <div
-                    className={`camera-stage ${state.camera.health === "offline" ? "offline" : ""}`}
+                    className={`camera-stage ${view.health === "offline" ? "offline" : ""}`}
                     ref={stage}
                   >
                     {room === 0 ? (
@@ -1113,7 +1123,7 @@ export default function App() {
                             />
                           ) : (
                             <div className="server-frame waiting">
-                              Connecting to {state.camera.capture?.source || "the camera"}…
+                              Connecting to {view.capture?.source || "the camera"}…
                             </div>
                           )
                         ) : (
@@ -1124,13 +1134,13 @@ export default function App() {
                           {sourceType !== "illustration" && (
                             <div className="source-badge">
                               <span
-                                className={`status-dot ${state.camera.health === "offline" ? "red" : ""}`}
+                                className={`status-dot ${view.health === "offline" ? "red" : ""}`}
                               />
-                              {state.camera.health === "offline"
+                              {view.health === "offline"
                                 ? "Analysis unavailable"
                                 : !analysisReady
                                   ? "Local playback"
-                                  : state.camera.health === "degraded"
+                                  : view.health === "degraded"
                                     ? "Analysis delayed"
                                     : state.session.status === "active"
                                       ? "Monitoring active"
@@ -1146,7 +1156,7 @@ export default function App() {
                             </div>
                           )}
                           <div className="camera-clock">
-                            <span>CAM 01 · EAST WING</span>
+                            <span>{sourceType === "server" ? `${focusCamera.toUpperCase().replace("-", " ")} · ${view.room_label}` : "CAM 01 · EAST WING"}</span>
                             <strong>{stamp(position)}</strong>
                           </div>
                         </div>
@@ -1177,12 +1187,12 @@ export default function App() {
                               viewBox="0 0 1000 1000"
                               preserveAspectRatio="none"
                             >
-                              {landmarks
+                              {(showSetup ? landmarks : [])
                                 .filter(
                                   (l) =>
                                     rulesOpen ||
                                     draftLandmarks.has(l.id) ||
-                                    (zones && ruleLandmarks.has(l.id)),
+                                    (zones && showSetup && ruleLandmarks.has(l.id)),
                                 )
                                 .map((l) => (
                                   <polygon
@@ -1251,12 +1261,12 @@ export default function App() {
                                 />
                               ) : null,
                             )}
-                            {landmarks
+                            {(showSetup ? landmarks : [])
                               .filter(
                                 (l) =>
                                   rulesOpen ||
                                   draftLandmarks.has(l.id) ||
-                                  (zones && ruleLandmarks.has(l.id)),
+                                  (zones && showSetup && ruleLandmarks.has(l.id)),
                               )
                               .map((l) => (
                                 <span
@@ -1293,7 +1303,7 @@ export default function App() {
                                   {i + 1}
                                 </span>
                               ))}
-                            {zones && (
+                            {zones && showSetup && (
                               <svg
                                 viewBox="0 0 1000 1000"
                                 preserveAspectRatio="none"
@@ -1595,7 +1605,7 @@ export default function App() {
                             </div>
                           </div>
                         )}
-                        {state.camera.health === "offline" && (
+                        {view.health === "offline" && (
                           <div className="offline-message">
                             <WifiOff size={28} />
                             <h3>Analysis unavailable</h3>
@@ -1603,7 +1613,7 @@ export default function App() {
                               <>
                                 <p>
                                   No new frames from{" "}
-                                  {state.camera.capture?.source ||
+                                  {view.capture?.source ||
                                     state.session.camera_label ||
                                     "the camera"}
                                   . Reconnecting automatically. Monitoring
@@ -1637,30 +1647,30 @@ export default function App() {
                         )}
                         {sourceType !== "illustration" &&
                           state.session.status === "active" &&
-                          state.camera.analysis_fps !== undefined && (
+                          view.analysis_fps !== undefined && (
                             <div className="video-footer">
                               <span
                                 className={
-                                  state.camera.analysis_fps < 8 ||
-                                  state.camera.health === "offline"
+                                  view.analysis_fps < 8 ||
+                                  view.health === "offline"
                                     ? "analysis-rate low"
                                     : "analysis-rate"
                                 }
                                 title={
-                                  state.camera.analysis_fps < 8
+                                  view.analysis_fps < 8
                                     ? `Rhythmic-movement checks need at least 8 analyzed frames per second.${sourceType === "server" ? "" : " Keep this tab visible."}`
                                     : sourceType === "server"
                                       ? "Frames analyzed per second by the server, whether or not this tab is visible"
                                       : "Frames analyzed per second on this computer"
                                 }
                               >
-                                {state.camera.detector === "pose"
+                                {view.detector === "pose"
                                   ? "Pose"
                                   : "Person"}{" "}
                                 ·{" "}
-                                {state.camera.health === "offline"
+                                {view.health === "offline"
                                   ? "no frames"
-                                  : `${state.camera.analysis_fps.toFixed(1)} fps`}
+                                  : `${view.analysis_fps.toFixed(1)} fps`}
                               </span>
                             </div>
                           )}
@@ -1676,12 +1686,14 @@ export default function App() {
 
                 </div>
                 {cameraLayout !== "single" && <div className="additional-cameras">
+                  {sourceType === "server" && room === 0 ? <LiveCameras cameras={liveCameras} focus={focusCamera} onFocus={id => { setFocusCamera(id); setServerFrame(""); }} onState={s => setState(prev => ({ ...s, overlays: prev.overlays }))} /> : <>
                   {rooms.map((camera, index) => index !== room && <button className="camera-preview-card" key={camera.id} onClick={() => { setRoom(index); setSelectedIncident(null); }} aria-label={`Focus ${camera.name}`}>
                     <div className="preview-card-header"><span><Video size={14} />{camera.name}</span><small>{camera.id}</small></div>
                     <div className="preview-card-scene">{index === 0 && sourceType !== "illustration" ? serverFrame && sourceType === "server" ? <img src={serverFrame} alt="Current server camera preview" /> : <div className="preview-source-placeholder"><Video size={24} /><span>{sourceType === "webcam" ? "Webcam connected" : "Video source connected"}</span><small>Select to view and control</small></div> : <DemoScene room={index} zones={zones} />}</div>
                     <div className="preview-card-footer"><span>{index === 0 && sourceType !== "illustration" ? "Connected source" : "Illustrative demo · not a live feed"}</span><Maximize2 size={12} /></div>
                   </button>)}
                   {cameraLayout === "grid" ? <><div className="empty-camera-slot" aria-label="Empty camera slot 3" /><div className="empty-camera-slot" aria-label="Empty camera slot 4" /></> : <button className="add-camera-tile" onClick={() => { setCameraMessage(""); setSourceOpen(true); }}><Plus size={20} /><strong>Connect a camera</strong><span>RTSP or HTTP stream</span><small>One analyzed source at a time</small></button>}
+                  </>}
                 </div>}
                 </div>
 
