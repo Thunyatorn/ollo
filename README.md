@@ -70,8 +70,10 @@ The label format is in the script's header (same as the team's evaluator, plus o
 ## Demo room (no camera needed)
 
 `vision/scripts/make_demo_room.py` builds a 37-second video from the GMDCSA24 dataset (one person moving about, then a
-fall). Run it as the camera: `python -m nestwatch_vision.main out/demo_room.mp4 --realtime --demo-map`. The dashboard shows
-the person moving, and a fall alert near the end.
+fall). Run it as the camera: `python -m nestwatch_vision.main out/demo_room.mp4 --realtime --loop --demo-map --quiet-alarm`
+(`--loop` repeats it, so the picture keeps playing; its alerts repeat too, so keep real phone calls off). The dashboard's Room
+page shows the person moving on the floor plan, and under it the live camera picture with faces blurred and the pose
+skeleton drawn on (served by the vision service at `/live/cam1`, local network only), then a fall alert near the end.
 
 ## Phone as the camera
 

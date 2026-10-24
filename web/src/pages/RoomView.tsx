@@ -3,6 +3,7 @@ import { useTable } from 'spacetimedb/react';
 import { tables } from '../module_bindings';
 import FloorPlan from '../components/FloorPlan';
 import AlertCard from '../components/AlertCard';
+import LiveCamera from '../components/LiveCamera';
 import { OPEN_STATES, eventLabel, formatClock, tsMs, useMe } from '../lib';
 import { VISION_URL } from '../config';
 
@@ -93,6 +94,7 @@ export default function RoomView() {
             </div>
           )}
           {tagMsg && <div className="banner" role="status">{tagMsg}</div>}
+          {roomCameras.map(c => <LiveCamera key={c.id} cameraId={c.id} name={c.name} />)}
         </div>
 
         <div className="stack">

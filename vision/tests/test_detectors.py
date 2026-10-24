@@ -124,3 +124,16 @@ def test_a_child_far_from_the_tagged_adult_alerts_after_about_ten_seconds_and_a_
     run_room(p2, lambda t: (1.0, 1.5), lambda t: (2.0, 1.5), 1.0)
     p2.tag_adult([tr for tr in p2.tracker.tracks if tr.pos[0] > 1.5][0].id, "Maria")
     assert run_room(p2, lambda t: (1.0, 1.5), lambda t: (2.0, 1.5), 30.0, start=1.0) == []   # adult 1 m away: fine
+
+
+def test_overlay_draws_on_a_copy_and_adds_a_banner_only_when_asked():
+    import numpy as np
+    from nestwatch_vision.overlay import draw
+    from nestwatch_vision.pose import Person
+    k = np.zeros((17, 3)); k[5], k[7] = (40, 40, 0.9), (60, 80, 0.9)
+    person = Person(np.array([30, 30, 90, 150]), 0.9, k)
+    img = np.zeros((200, 200, 3), np.uint8)
+    out = draw(img, [person], 1.0)
+    assert img.sum() == 0 and out.sum() > 0                                 # the input is untouched
+    assert draw(img, [], 1.0).sum() == 0                                    # nobody, no banner: nothing drawn
+    assert draw(img, [], 1.0, "POSSIBLE FALL")[:30, :, 2].mean() > 100      # banner strip along the top

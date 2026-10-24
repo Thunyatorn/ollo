@@ -124,6 +124,7 @@ class EvidenceRecorder:
         self._snap_faces = FaceDetector(self.cfg.face_model, self.cfg.face_thr, self.cfg.face_expand)   # its own instance: snapshots come from another thread
         self._snap_lock = threading.Lock()
         self._ring: deque = deque()                                    # (t, jpeg bytes of a BLURRED frame)
+        self._live = None                                              # (frame t, wall time, BLURRED picture) for the dashboard's live view
         self._lock = threading.Lock()
         self._pending: list[tuple[str, float]] = []
         self._jobs: queue.Queue = queue.Queue()
@@ -166,11 +167,20 @@ class EvidenceRecorder:
             log.exception("could not blur a frame; dropping it")
             return False
         with self._lock:
+            self._live = (t, time.perf_counter(), blurred)
             self._ring.append((t, buf.tobytes()))
             horizon = t - (self.cfg.seconds_before + self.cfg.seconds_after + 1.0)
             while self._ring and self._ring[0][0] < horizon:
                 self._ring.popleft()
         return True
+
+    def live(self):
+        """(frame time, seconds since it arrived, a copy of the newest BLURRED picture), or None. Never an unblurred frame."""
+        with self._lock:
+            if self._live is None:
+                return None
+            t, wall, img = self._live
+            return t, time.perf_counter() - wall, img.copy()
 
     def trigger(self, clip_ref: str, t: float) -> bool:
         if not SAFE_REF.match(clip_ref):

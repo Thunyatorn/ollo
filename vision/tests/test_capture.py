@@ -115,3 +115,16 @@ def test_watch_survives_a_camera_drop_and_reports_it_once():
     src.stop()
     assert events == ["offline", "online"]                            # one notice each way, not one per silent 0.1 s
     assert got == sorted(set(got))                                    # no frame delivered twice
+
+
+def test_a_looping_file_keeps_going_with_time_counting_up(tmp_path):
+    path = str(tmp_path / "v.mp4")
+    w = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*"mp4v"), 10, (32, 24))
+    for n in range(10):
+        w.write(np.full((24, 32, 3), n * 20, np.uint8))
+    w.release()
+    once = [f.index for f in FileSource(path).frames()]
+    looped = [f for _, f in zip(range(25), FileSource(path, loop=True).frames())]
+    assert len(once) == 10 and len(looped) == 25                           # the looping source goes past the end of the file
+    assert [f.index for f in looped] == list(range(25))
+    assert all(b.t > a.t for a, b in zip(looped, looped[1:]))              # and time never goes backwards

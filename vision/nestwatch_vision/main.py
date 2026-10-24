@@ -32,6 +32,8 @@ from .pose import PoseModel
 from .sync import SpacetimeHttp, SpacetimeSink
 from .zones import ZoneCache
 
+BANNERS = {"fall": "POSSIBLE FALL", "zone_entry": "CHILD IN A RESTRICTED AREA", "zone_entry_predicted": "CHILD HEADING INTO A RESTRICTED AREA",
+           "child_not_visible": "CHILD NOT VISIBLE", "unsupervised": "CHILD WITHOUT AN ADULT NEARBY"}
 log = logging.getLogger("nestwatch")
 
 
@@ -104,6 +106,7 @@ def main(argv=None) -> None:
     ap.add_argument("--demo-map", action="store_true", help="no calibration: stretch the whole picture over the room")
     ap.add_argument("--dry-run", action="store_true", help="do not send anything to Spacetime")
     ap.add_argument("--realtime", action="store_true", help="play a video file at its own speed")
+    ap.add_argument("--loop", action="store_true", help="repeat a video file forever (a demo room); its alerts repeat too, so keep real phone calls off")
     ap.add_argument("--no-evidence", action="store_true", help="do not save clips (otherwise blurred clips go under evidence/)")
     ap.add_argument("--evidence-dir", default=EvidenceConfig().dir)
     ap.add_argument("--host", default="127.0.0.1", help="where the local API listens; 0.0.0.0 lets other devices on the daycare network reach it")
@@ -136,7 +139,7 @@ def main(argv=None) -> None:
             log.warning("PHONE CAMERA: open %s on the phone (same Wi-Fi; accept the certificate warning once)", u)
         src = LiveSource("phone", open_fn=lambda: feed)
     else:
-        src = open_source(a.source, realtime=a.realtime)
+        src = open_source(a.source, realtime=a.realtime, loop=a.loop)
     if hasattr(src, "start"):
         src.start()
     frames = src.frames()
@@ -239,6 +242,7 @@ def main(argv=None) -> None:
                               {z.id: z for z in zones.zones}, f.t)
                 last_close = now
             for e in res.events:
+                latest.set_banner(BANNERS.get(e.event_type, e.event_type.replace("_", " ").upper()))
                 log.warning("ALERT %s %s %s predicted %s s", e.track_id, e.event_type, e.zone_id, e.predicted_entry_s)
                 coord.on_local_event(e.clip_ref, e.severity, bool(sink and sink.online))     # no Spacetime: sound the alarm here
                 if sink and e.severity == "high":

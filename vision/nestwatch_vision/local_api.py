@@ -1,6 +1,7 @@
 """The vision service's local HTTP and WebSocket API. See CLUADE.md "Local endpoints (local network only)".
 
   GET  /snapshot/{camera_id}     latest frame, faces blurred, for calibration and zone drawing
+  GET  /live/{camera_id}         the live picture (motion JPEG), faces blurred, with the pose skeleton, for the dashboard
   POST /calibrate/{camera_id}    {image_points, floor_points} -> new homography and its error (MATH.md 1.6)
   POST /tag-adult                {track_id, caregiver_id, caregiver_name} marks a tracked person as an adult
   GET  /clips/{event_id}         blurred H.264 clip of an event
@@ -20,16 +21,20 @@ import os
 import queue
 import re
 import threading
+import time
 from typing import Any, Callable
+
+import asyncio
 
 import cv2
 import numpy as np
-from fastapi import Body, FastAPI, HTTPException, WebSocket
+from fastapi import Body, FastAPI, HTTPException, Query, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from .calibration import CalibrationError, calibrate
 from .evidence import SAFE_REF
+from .overlay import draw, no_signal
 
 log = logging.getLogger("nestwatch.api")
 LOCAL_ORIGIN = r"^https?://(localhost|127\.0\.0\.1|\[::1\]|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|[A-Za-z0-9-]+\.local)(:\d+)?$"
@@ -65,6 +70,8 @@ class Latest:
     frame: np.ndarray | None = None
     people: list = field(default_factory=list)
     t: float = 0.0
+    banner: str = ""                                # text for the live view while an alert is fresh
+    banner_until: float = 0.0                       # time.monotonic() when it stops showing
 
     def set(self, frame, people, t):
         with self.lock:
@@ -73,6 +80,14 @@ class Latest:
     def get(self):
         with self.lock:
             return self.frame, self.people, self.t
+
+    def set_banner(self, text: str, seconds: float = 6.0):
+        with self.lock:
+            self.banner, self.banner_until = text, time.monotonic() + seconds
+
+    def current_banner(self) -> str:
+        with self.lock:
+            return self.banner if time.monotonic() < self.banner_until else ""
 
 
 @dataclass
@@ -149,6 +164,42 @@ def create_app(ctx: VisionContext) -> FastAPI:
             raise HTTPException(503, "could not blur the snapshot; not sending it")      # fail closed
         ok, buf = cv2.imencode(".jpg", safe, [cv2.IMWRITE_JPEG_QUALITY, 85])
         return Response(buf.tobytes(), media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+    @app.get("/live/{camera_id}")
+    async def live(camera_id: str, request: Request, frames: int = Query(0, ge=0, le=10000, description="stop after this many pictures (0 = keep going)")):
+        """The dashboard's live view: the same blurred picture the clip buffer keeps (never a raw frame), with the pose
+        skeleton and a banner for a fresh alert drawn on a copy. Local network only, like every route here."""
+        check_camera(camera_id)
+        if ctx.recorder is None:
+            raise HTTPException(503, "the live view needs the face blur (clips are switched off); refusing to send an unblurred picture")
+
+        async def pictures():
+            last, sent = None, 0
+            while not await request.is_disconnected() and not (frames and sent >= frames):
+                got = ctx.recorder.live()
+                try:
+                    if got is not None and got[1] < 3.0:
+                        if got[0] != last:
+                            last = got[0]
+                            frame, people, _ = ctx.latest.get()
+                            scale = got[2].shape[1] / frame.shape[1] if frame is not None else 1.0
+                            img = draw(got[2], people, scale, ctx.latest.current_banner())
+                        else:
+                            await asyncio.sleep(0.04)
+                            continue
+                    else:
+                        img = no_signal()                                              # nothing fresh: say so instead of freezing
+                        await asyncio.sleep(0.5)
+                    ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                except Exception:
+                    log.exception("live view failed; closing the stream")                # fail closed
+                    return
+                if ok:
+                    sent += 1
+                    yield (b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " + str(len(buf)).encode() + b"\r\n\r\n" + buf.tobytes() + b"\r\n")
+                await asyncio.sleep(0.04)
+
+        return StreamingResponse(pictures(), media_type="multipart/x-mixed-replace; boundary=frame", headers={"Cache-Control": "no-store"})
 
     @app.post("/calibrate/{camera_id}")
     def calibrate_camera(camera_id: str, body: dict = Body(...)):

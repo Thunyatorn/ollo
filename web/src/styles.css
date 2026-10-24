@@ -92,6 +92,9 @@ caption { text-align: left; padding: .3rem .1rem; }
 .plan .lbl { transition: x .15s linear, y .15s linear; }
 .plan .ring { animation: ring 1.2s ease-in-out infinite; }
 @keyframes ring { 50% { opacity: .3; } }
+/* live camera figure */
+img.live { width: 100%; display: block; background: #000; border: 1px solid var(--rule); }
+.live-off { border: 1px solid var(--rule); padding: 1.2rem; text-align: center; background: #f6f6f6; }
 figcaption, .figcap { font-size: .92rem; font-style: italic; }
 
 /* phone */

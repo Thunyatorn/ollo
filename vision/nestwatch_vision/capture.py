@@ -30,8 +30,8 @@ def classify(source) -> str:
 
 
 class FileSource:
-    def __init__(self, path: str, realtime: bool = False):
-        self.path, self.realtime = path, realtime
+    def __init__(self, path: str, realtime: bool = False, loop: bool = False):
+        self.path, self.realtime, self.loop = path, realtime, loop         # loop: start again at the end (a demo that keeps playing)
 
     def frames(self) -> Iterator[Frame]:
         cap = cv2.VideoCapture(self.path)
@@ -42,6 +42,9 @@ class FileSource:
         try:
             while True:
                 ok, img = cap.read()
+                if not ok and self.loop and i > 0:
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)                  # time keeps counting up across the restart
+                    ok, img = cap.read()
                 if not ok:
                     return
                 if self.realtime:                                    # pace the replay like a live camera
@@ -143,7 +146,7 @@ class LiveSource:
             self._thread.join(timeout=2.0)
 
 
-def open_source(source, realtime: bool = False):
+def open_source(source, realtime: bool = False, loop: bool = False):
     """A webcam index, an rtsp/http URL, or a video file path. Live sources need .start() before .frames()."""
     kind = classify(source)
-    return FileSource(str(source), realtime) if kind == "file" else LiveSource(source)
+    return FileSource(str(source), realtime, loop) if kind == "file" else LiveSource(source)

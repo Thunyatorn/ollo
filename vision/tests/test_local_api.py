@@ -163,3 +163,49 @@ def test_buzzer_websocket_is_wired(world):
             time.sleep(0.01)
         assert ctx.hub.send("buzzer-maria", {"type": "buzz", "alert_id": "a_1", "severity": "high"})
         assert ws.receive_json()["type"] == "buzz"
+
+
+# ---- live view ---------------------------------------------------------------------------------
+def jpegs(body: bytes):
+    """The JPEG pictures inside a multipart/x-mixed-replace body."""
+    out = []
+    for part in body.split(b"--frame")[1:]:
+        if b"\r\n\r\n" in part:
+            data = part.split(b"\r\n\r\n", 1)[1].rstrip(b"\r\n")
+            if data.startswith(b"\xff\xd8"):
+                out.append(cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR))
+    return out
+
+
+def test_live_view_needs_a_camera_it_knows_and_the_blur(world):
+    ctx, c, *_ = world
+    assert c.get("/live/cam9?frames=1").status_code == 404
+    ctx.recorder = None
+    r = TestClient(create_app(ctx), client=LOCAL).get("/live/cam1?frames=1")
+    assert r.status_code == 503 and "unblurred" in r.text
+
+
+def test_live_view_never_falls_back_to_a_raw_frame(world):
+    ctx, c, *_ = world
+    ctx.latest.set(np.full((360, 640, 3), 200, np.uint8), [], 1.0)         # a RAW frame exists, but nothing was blurred and kept
+    r = c.get("/live/cam1?frames=1")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("multipart/x-mixed-replace")
+    (pic,) = jpegs(r.content)
+    assert pic.mean() < 80                                                  # the dark "not sending" picture, not the bright raw one
+
+
+@pytest.mark.skipif(not (os.path.exists(FACE_W) and os.path.exists(POSE_W)), reason="model files not downloaded")
+def test_live_view_shows_the_blurred_picture_with_a_skeleton_and_a_banner(world):
+    from nestwatch_vision.pose import PoseModel
+    ctx, c, *_ = world
+    img = cv2.imread(os.path.join(ASSETS, "zidane.jpg"))
+    people = PoseModel(PoseConfig(weights=POSE_W, device="cpu")).infer_all(img)
+    ctx.recorder.add(img, 1.0, people)
+    ctx.latest.set(img, people, 1.0)
+    ctx.latest.set_banner("POSSIBLE FALL")
+    (pic,) = jpegs(c.get("/live/cam1?frames=1").content)
+    assert pic.shape[1] <= 640 and pic.shape[1] < img.shape[1]             # the small blurred copy, not the full-size frame
+    red = (pic[:30, :, 2] > 150) & (pic[:30, :, 0] < 90)                   # the banner strip along the top
+    assert red.mean() > 0.5
+    green = (pic[40:, :, 1] > 140) & (pic[40:, :, 0] < 100) & (pic[40:, :, 2] < 100)
+    assert green.sum() > 50                                                # skeleton lines are drawn
