@@ -89,14 +89,16 @@ export default function RoomView() {
         <span className="count">{adults.length} {adults.length === 1 ? 'adult' : 'adults'}</span>
       </div>
 
-      <div className="room-layout">
+      <div className="figure-row">
+        {roomCameras.length === 0
+          ? <div className="card muted">No camera is set up yet. Add one in Setup.</div>
+          : roomCameras.map(c => <LiveCamera key={c.id} cameraId={c.id} name={c.name} />)}
         <div className="stack">
-          {roomCameras.map(c => <LiveCamera key={c.id} cameraId={c.id} name={c.name} />)}
           <FloorPlan
             room={room} zones={zones.filter(z => z.roomId === room.id)} positions={roomPositions}
             blindSpots={blind} alertTracks={alertTracks} showPath onTrackClick={setSelected}
           />
-          <p className="small muted">Figure 2. Circles are children, squares are adults, hatched areas are restricted zones, grey hatching is not covered by a camera. Click a mark to tag an adult.</p>
+          <p className="small muted figcap">Figure 2. Circles are children, squares are adults, hatched areas are restricted zones, grey hatching is not covered by a camera. Click a mark to tag an adult.</p>
           {selected && (
             <div className="card row">
               <span>Track {labelOf(selected) ?? selected}: this is</span>
@@ -110,16 +112,40 @@ export default function RoomView() {
           )}
           {tagMsg && <div className="banner" role="status">{tagMsg}</div>}
         </div>
+      </div>
+
+      <div className="room-layout">
+        <section className="stack" aria-label="Open alerts">
+          <h2 className="section-title">Open alerts <span className="muted">({open.length})</span></h2>
+          {open.length === 0 ? (
+            <div className="card"><p style={{ margin: 0 }}>None. All clear.</p></div>
+          ) : (
+            <>
+              <div className="alert-grid">
+                {listed.map(a => (
+                  <div key={a.id}>
+                    <AlertCard alert={a} me={me} caregivers={caregivers} via="dashboard" zoneName={zoneName(a.zoneId)} childLabel={labelOf(a.trackId)} />
+                    {a.clipRef && <p className="small"><a href={`${VISION_URL}/clips/${a.clipRef}`} target="_blank" rel="noreferrer">View blurred clip</a> <span className="muted">(only on the daycare network)</span></p>}
+                  </div>
+                ))}
+              </div>
+              {(open.length > SHOWN || handled.length > 1) && (
+                <div className="row small list-controls">
+                  {open.length > SHOWN && (
+                    <span>Showing {listed.length} of {open.length}, most urgent first.{' '}
+                      <button className="linkbtn" onClick={() => setShowAll(v => !v)}>{showAll ? 'Show fewer' : `Show all ${open.length}`}</button></span>
+                  )}
+                  {handled.length > 1 && (
+                    <button className="btn secondary" onClick={resolveHandled} disabled={busyAll}>{busyAll ? 'Resolving…' : `Resolve all ${handled.length} that are being handled`}</button>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </section>
 
         <div className="stack">
-          {open.length === 0 ? (
-            <div className="card"><h2>Open alerts:</h2><p>None. All clear.</p></div>
-          ) : listed.map(a => (
-            <div key={a.id}>
-              <AlertCard alert={a} me={me} caregivers={caregivers} via="dashboard" zoneName={zoneName(a.zoneId)} childLabel={labelOf(a.trackId)} />
-              {a.clipRef && <p className="small"><a href={`${VISION_URL}/clips/${a.clipRef}`} target="_blank" rel="noreferrer">View blurred clip</a> <span className="muted">(only on the daycare network)</span></p>}
-            </div>
-          ))}
+          <SystemStatus />
 
           <div className="card">
             <h2>Cameras:</h2>
@@ -127,18 +153,6 @@ export default function RoomView() {
               <div key={c.id} className="row small"><span className="grow">{c.name}</span><span className={`pill ${c.status === 'online' ? 'ok' : 'medium'}`}>{c.status.replace('_', ' ')}</span></div>
             ))}
           </div>
-
-          {open.length > SHOWN && (
-            <p className="small">
-              Showing {listed.length} of {open.length} open alerts, most urgent first.{' '}
-              <button className="linkbtn" onClick={() => setShowAll(v => !v)}>{showAll ? 'Show fewer' : `Show all ${open.length}`}</button>
-            </p>
-          )}
-          {handled.length > 1 && (
-            <p className="small"><button className="btn secondary" onClick={resolveHandled} disabled={busyAll}>{busyAll ? 'Resolving…' : `Resolve all ${handled.length} that are being handled`}</button></p>
-          )}
-
-          <SystemStatus />
 
           <div className="card">
             <h2>Today:</h2>
