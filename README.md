@@ -1,8 +1,8 @@
-# Lookout
+# NestWatch
 
-A dark, camera-first daycare monitoring prototype. Lookout combines an observable boundary-event workflow with experimental multi-frame distress review, caregiver acknowledgment, and phone escalation.
+Safety alerts for home daycares. NestWatch analyzes an existing camera on the daycare's own computer. It warns before a child reaches a restricted area, and flags possible falls, choking-like gestures, rhythmic seizure-like movement and prolonged stillness as "check now" signals. It makes sure one caregiver owns each alert, escalating by phone if nobody responds, and writes a cited incident record with a face-blurred clip. It supports supervision and never replaces it. (The repository and API keep the working name `lookout`.)
 
-Built for Cal Hacks 13.0. Read the [implementation specification](docs/IMPLEMENTATION_SPEC.md) for the product scope and research.
+Built for Cal Hacks 13.0. [docs/SPEC.md](docs/SPEC.md) is the source of truth: requirements with IDs, acceptance criteria, the tests that verify each one, and the build plan. `server/tests/test_spec.py` fails the suite if the spec and tests disagree. Background research is in the [implementation specification](docs/IMPLEMENTATION_SPEC.md), and measured changes are in the [improvement log](docs/IMPROVEMENT_LOG.md).
 
 ## Run locally
 
@@ -12,8 +12,12 @@ Requires Node.js 20.19+ and Python 3.12 (recommended). From this directory:
 npm install
 python3.12 -m venv .venv
 .venv/bin/python -m pip install -r server/requirements.txt
+.venv/bin/python -m pip install -r server/requirements-pose.txt
+npm run models
 npm start
 ```
+
+The second install and `npm run models` add the local pose detector (YOLO26n-pose with ByteTrack IDs, CPU-only PyTorch, about 30 ms per frame). Weights are saved once to `models/`; the API never downloads at runtime. Skip both steps to run with the weaker OpenCV HOG fallback, or force it with `LOOKOUT_DETECTOR=hog`.
 
 Open [Lookout](http://127.0.0.1:5173). The combined launcher starts Vite on port 5173 and the API on port 8000. If your system has a different Python executable, use its full path to create the virtual environment.
 
@@ -31,21 +35,37 @@ The frontend also supports a clearly labeled local demonstration when the API is
 
 ## Demo
 
-1. Open the monitoring view. The initial room is an AI-generated CCTV-style still with four illustrative tracking boxes, visibly labeled as a demo. Select cameras from the video header.
-2. Open Settings → General to manage the video source and use demo scenarios to create a simulated restricted-area or possible-distress incident.
-3. Acknowledge the incident, inspect its event-trace details, and explicitly resolve it. Answering a phone call is not acknowledgment.
-4. Upload rights-cleared recorded footage to inspect your own video. Optional webcam access uses a browser permission prompt.
-5. Without provider credentials, phone escalation remains simulated and visibly labeled. Real calls require configured credentials, an allowlisted recipient, and explicit session arming.
+The 2-minute live script, setup checklist, fallbacks and Q&A are in [docs/DEMO.md](docs/DEMO.md). Without any credentials, everything except real calls and Claude features runs offline:
 
-The desktop interface uses Tailwind's gray neutral palette, compact controls, a right-hand event trace, incident timeline markers, restrained status color, and a responsive mobile caregiver view.
+1. Upload a recorded clip, start the browser webcam, or connect a camera the server reads itself (Settings → Manage source: a webcam index such as `0`, or an `rtsp://` or `http://` stream URL). With the server camera, analysis keeps running when the dashboard tab is hidden or closed (SRC-4).
+2. Calibrate the floor (ruler button) and draw a landmark (shield button).
+3. Use Settings → demo scenarios for fixture incidents.
+4. Acknowledge and resolve incidents in the event trace, open a Report, and try `/respond/{id}` on a phone-sized window.
+
+Calls stay simulated and labeled until real providers are configured and the operator arms them for the session.
+
+## Sponsor tools
+
+| Tool | Where it does real work | Code |
+|---|---|---|
+| **Anthropic Claude** | 1. A second opinion on each local alert: face-blurred crops of the flagged person, structured output, never on the alert path (AI-1 to AI-5). 2. Turning a typed rule into a draft that the operator confirms (AI-6). 3. Incident reports where every line must cite logged facts (AI-7). | `server/review.py`, `server/rules.py`, `server/report.py` |
+| **Cartesia** | The escalation call. Sonic speech for the keypad call (ESC-2), and a voice agent that understands "I'm on it" and acknowledges through a webhook tool (ESC-3). | `server/providers.py`, [docs/CARTESIA_AGENT.md](docs/CARTESIA_AGENT.md) |
+| Twilio | Keypad call and fallback when the voice agent fails | `server/providers.py` |
+| Ultralytics YOLO (open source, AGPL-3.0) | Local pose detection and tracking | `server/vision.py` |
+
+Considered and not used: Spacetime and Mana as the core backend and dashboard, because the tested FastAPI alert core is what the demo depends on (SPEC D-3). Wajo has no API for starting calls (D-4). The Apify recall checker is a post-M4 add-on.
 
 ## Providers and credentials
 
 Copy `.env.example` to `.env` and fill in only the services you intend to use. Never commit `.env`. The API reads environment configuration at startup; see the example for the actual supported variables.
 
-- **Video:** local OpenCV person-detection baseline. This is an adult-demo baseline with significant limitations for small, seated, crawling, or occluded people. It does not classify age or identity.
-- **Experimental review:** Anthropic vision on sampled ordered frames, enabled explicitly in settings. Requires an API key and an available model ID. Cloud review transmits selected frames to the provider.
+- **Video:** local YOLO26n-pose (17 body keypoints per person) with ByteTrack IDs, so each person has their own restricted-zone state. Ground position uses confident ankles, else the box's bottom center. Falls back to the OpenCV HOG person detector when the pose model is not installed. Pose models are trained mostly on adults and have significant limitations for small, seated, crawling, or occluded children. Nothing classifies age or identity. Ultralytics is AGPL-3.0.
+- **Local event rules** (`server/events.py`) on each tracked person's keypoints: both hands at the throat (about 1.5 s), fast drop then lying (about 1 s after the drop), repetitive 1–5 Hz movement in two or more limbs (about 8 s, needs at least 8 analyzed frames per second), and prolonged stillness (configurable `stillness_seconds`, suppressed by `nap_mode`). Each integrates evidence over time, so one noisy frame never alerts. They are "check now" signals, never diagnoses, and their thresholds are tuned on synthetic skeletons, not real footage.
+- **Claude second opinion** (`server/review.py`, official `anthropic` SDK): enabled explicitly in settings. Runs only after a local rule has already raised an incident, so it never delays, cancels, or downgrades an alert, and nothing is sent while nothing happens. It sends up to 4 frames cropped to the flagged person, with every visible head blurred first, and gets back a structured opinion (JSON-schema output) that is attached to the incident as context. Models with safety classifiers use server-side `fallbacks: "default"`. A per-session token and cost meter appears in settings. See `.env.example` for per-review cost by model.
 - **Speech:** Cartesia synthesizes the caregiver alert.
+- **Rules in plain words** (`server/rules.py`): draw and name landmarks on the video (shield button), then type a rule such as "Keep kids away from the kitchen gate during nap time". Claude (`CLAUDE_MODEL`, JSON-schema output) drafts a landmark, a schedule (always, a time window, or nap mode) and a severity. Anything it can't match to a real landmark or a valid time comes back as a question, and nothing is enforced until you confirm. Confirmed rules become extra restricted zones, each with its own entry state and predictive warning.
+- **Evidence and reports:** when an incident opens, the analyzed frames from 5 s before to 5 s after are saved as a WebM clip with every head blurred (`server/clips.py`), and evidence stills are blurred too. Clips are deleted after `clip_retention_days` (default 7). The incident card's Report button builds a timeline from numbered facts taken only from logged data (`server/report.py`). With Claude configured, Claude phrases it, but every line must cite facts, and lines that assert a diagnosis are removed. The report downloads as Markdown.
+- **Voice agent (optional):** with `CALL_PROVIDER=cartesia_agent`, a Cartesia voice agent places the call and the caregiver can just say "I'm on it". The agent's webhook tool presents a single-use token to `/webhooks/voice/ack`, which acknowledges through the same first-wins path, and the dashboard shows "Handled by ⟨name⟩ via voice". A failed agent call falls back to the keypad call. Setup: [docs/CARTESIA_AGENT.md](docs/CARTESIA_AGENT.md).
 - **Phone:** Twilio places the call and receives signed delivery/DTMF callbacks. Verified recipients and account capabilities must be tested in the actual account. API credits for speech do not imply free phone minutes.
 
 Real calls must only target consenting teammates during the hackathon. Never configure emergency-service numbers. A reachable HTTPS callback URL is required for phone providers; don't expose the entire local dashboard through an unauthenticated public tunnel.
@@ -61,12 +81,28 @@ Browser smoke checks use Playwright. If Playwright is not available in your envi
 
 ```sh
 npm run test:ui
-node scripts/media-smoke.mjs
+npm run test:media
+npm run test:design
+npm run test:camera
 ```
+
+`test:camera` checks SRC-4 server capture. It serves a generated MJPEG stream over local HTTP, so the server's real OpenCV path reads it without opening a camera. It checks analysis with no dashboard tab open, and `offline` within 3 s of the stream stalling.
+
+`test:design` checks UI-4, UI-5 and UI-6 in a real browser: branding, the floor-plan inset, skeletons, and the caregiver phone view. It injects overlays by intercepting the frame endpoint, so it tests rendering, not detection.
 
 `media-smoke.mjs` creates a short synthetic WebM and checks the real upload/frame-analysis path. It is a transport check, not a detection benchmark. If your bundled Playwright browser version differs, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to an installed Chromium executable. Both scripts accept `LOOKOUT_URL` to override the default local address.
 
 Run the app before browser checks. Browser screenshots and state are written beneath `test-results/`, which is ignored.
+
+## Measuring accuracy
+
+Record staged clips with consenting teammates (positives, plus look-alikes such as eating, dancing and lying down on purpose), label them, and run:
+
+```sh
+npm run eval -- clips/labels.json --split test
+```
+
+`labels.json` lists each clip's path, split (`tune` or `test`), optional engine settings (zone, calibration, rules), and events (`kind`, `onset_s`). The real engine runs offline at 12 fps. A hit is an alert of the right kind 0–5 s after onset. The report gives precision and recall with Wilson 95% intervals, mean delay, and false alarms per hour of negative footage. Tune thresholds on `tune` and report `test`.
 
 ## Prototype boundaries
 
@@ -74,15 +110,22 @@ Possible choking/distress is an experimental caregiver-check signal, not a diagn
 
 Illustrations, developer fixtures, and cached results must retain their labels. No production daycare footage or child medical incidents are included. Do not publish private footage or present selected demo success as deployment accuracy.
 
-For sponsor opportunities and the verification status of free-credit offers, see the parent specification and [event briefing](../CALHACKS_13_BRIEFING.md).
+Sponsor use is listed above. Spec decisions and their "revisit if" conditions are in [docs/SPEC.md](docs/SPEC.md).
 
 ## Verified in this workspace
 
+- `pytest`: 71 tests, each named in [docs/SPEC.md](docs/SPEC.md); `test_spec.py` fails if the spec and tests disagree.
+- Browser (Playwright): `test:ui`, `test:media`, `test:design` and `test:camera` all pass.
 - Production TypeScript/Vite build.
-- Backend tests for incident transitions, call gating, callback signatures/order, frame validation, temporal zone rules, and experimental review schema handling.
-- Browser workflow: fixture incident → acknowledgment → resolution, history, preferences, source dialog, and responsive layout.
-- Actual synthetic WebM upload, decoding, sampled-frame ingestion, and pause behavior.
+- Live checks in a browser, recorded in [docs/IMPROVEMENT_LOG.md](docs/IMPROVEMENT_LOG.md):
+  - 12 fps analysis, and 12 fps from the server camera with no dashboard tab open
+  - floor calibration through the UI
+  - a 2.76 s predictive lead
+  - the rule confirm gate (draft not enforced, confirmed enforced)
+  - face-blurred evidence clips and reports
+  - "Handled by" ownership
+- Evaluation harness on real YOLO output. It caught and fixed a ground-point bias.
 
-Real provider calls, cloud model output, representative infant/toddler detection accuracy, RTSP cameras, and background mobile push were not verified. Desktop polling updates connected views; physical-phone delivery uses the configured call provider. Mobile response links currently use the local operator session, so remote caregiver authentication/pairing is still future work.
+**Not verified:** real Claude responses (no API key here; all Claude paths are tested with fakes), real Cartesia or Twilio calls, detection accuracy on children, a real RTSP camera or physical webcam through server capture (tested with a generated HTTP MJPEG stream through the same OpenCV path), and remote caregiver authentication. With a browser source (upload or browser webcam), analysis slows when the dashboard tab is hidden; the server camera does not.
 
 The playroom background was generated with the built-in imagegen tool and saved as `public/playroom-cctv.png`. Its full generation prompt is in `public/playroom-cctv.prompt.txt`. The overlaid boxes are static UI demonstration elements, not model detections.

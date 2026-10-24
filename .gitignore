@@ -13,3 +13,6 @@ test-results/
 .env.*
 !.env.example
 .pytest_cache/
+
+# Local model weights (fetched with npm run models)
+models/

@@ -17,7 +17,18 @@ export async function request<T = LookoutState>(
           ? undefined
           : JSON.stringify(body),
   });
-  if (!response.ok) throw new Error(`Request failed (${response.status})`);
+  if (!response.ok) {
+    // Surface the server's reason (FastAPI `detail`) so the UI can say what to fix.
+    let detail: unknown;
+    try {
+      detail = (await response.json()).detail;
+    } catch {
+      detail = undefined;
+    }
+    throw new Error(
+      typeof detail === "string" ? detail : `Request failed (${response.status})`,
+    );
+  }
   return response.json();
 }
 export const initialState: LookoutState = {

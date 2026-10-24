@@ -11,6 +11,16 @@ def uid():
     return uuid.uuid4().hex
 
 
+# Incident kind → (title, spoken phrase for calls, limitations shown with the evidence).
+KINDS = {
+    'boundary': ('Restricted-area activity', 'Restricted-area activity was observed.', []),
+    'distress': ('Possible distress / choking concern', 'Possible distress was observed.', ['Airway status cannot be determined from video.']),
+    'fall': ('Possible fall', 'A possible fall was observed.', ['Injury cannot be determined from video.']),
+    'rhythmic': ('Unusual rhythmic movement', 'Unusual rhythmic movement was observed.', ['Not a seizure diagnosis. Consciousness and cause cannot be determined from video.']),
+    'stillness': ('Prolonged stillness', 'A child has been very still for a long time.', ['Breathing cannot be determined from video.']),
+}
+
+
 class Store:
     def __init__(self, path):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -23,6 +33,8 @@ class Store:
         CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY,incident_id TEXT,step INTEGER,due REAL,status TEXT,payload TEXT,UNIQUE(incident_id,step));
         CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT,type TEXT,message TEXT,at REAL);
         ''')
+        if 'incident_id' not in [c[1] for c in self.db.execute('PRAGMA table_info(events)')]:
+            self.db.execute('ALTER TABLE events ADD COLUMN incident_id TEXT')  # Older databases.
         if not self.get('session'):
             self.put('session', {'id': uid(), 'epoch': 1, 'status': 'paused', 'calls_armed': False, 'source_type': 'demo', 'frame_seq': -1})
         session = self.get('session'); session['calls_armed'] = False; self.put('session', session)
@@ -39,11 +51,14 @@ class Store:
         with self.lock, self.db:
             self.db.execute('INSERT OR REPLACE INTO kv VALUES (?,?)', (key, json.dumps(value)))
 
-    def event(self, kind, message):
-        self.db.execute('INSERT INTO events(id,type,message,at) VALUES (?,?,?,?)', (uid(),kind,message,time.time()))
+    def event(self, kind, message, incident_id=None):
+        self.db.execute('INSERT INTO events(id,type,message,at,incident_id) VALUES (?,?,?,?,?)', (uid(),kind,message,time.time(),incident_id))
 
     def events(self):
         return [dict(r) for r in self.db.execute('SELECT * FROM events ORDER BY seq DESC LIMIT 100')]
+
+    def incident_events(self, incident_id):
+        return [dict(r) for r in self.db.execute('SELECT * FROM events WHERE incident_id=? ORDER BY seq', (incident_id,))]
 
     def incidents(self):
         return [json.loads(r[0]) for r in self.db.execute('SELECT payload FROM incidents ORDER BY opened DESC LIMIT 100')]
@@ -68,14 +83,28 @@ class Store:
                 if now - old.get('closed_at',old['opened_at']) < 30:
                     return old
             settings = self.get('settings')
-            incident = {'id':uid(),'session_id':session['id'],'epoch':session['epoch'],'kind':kind,'title':'Possible distress / choking concern' if kind=='distress' else 'Restricted-area activity','room':settings['room_label'],'status':'open','opened_at':now,'acknowledged_at':None,'resolved_at':None,'observations':observations,'origin':origin,'priority':priority,'revision':1,'assigned_responder':None,'limitations':['Airway status cannot be determined from video.'] if kind=='distress' else [],'primary_due_at':now+settings['primary_delay_seconds'],'backup_due_at':now+settings['backup_delay_seconds']}
+            incident = {'id':uid(),'session_id':session['id'],'epoch':session['epoch'],'kind':kind,'title':KINDS[kind][0],'room':settings['room_label'],'status':'open','opened_at':now,'acknowledged_at':None,'resolved_at':None,'observations':observations,'origin':origin,'priority':priority,'revision':1,'assigned_responder':None,'limitations':list(KINDS[kind][2]),'primary_due_at':now+settings['primary_delay_seconds'],'backup_due_at':now+settings['backup_delay_seconds']}
             self.save_incident(incident)
             for step,due in [(0,incident['primary_due_at']),(1,incident['backup_due_at'])]:
                 self.db.execute('INSERT OR IGNORE INTO jobs VALUES (?,?,?,?,?,?)',(uid(),incident['id'],step,due,'queued',json.dumps({})))
-            self.event('incident_opened',incident['title'] + (' · developer fixture' if origin=='fixture' else ''))
+            self.event('incident_opened',incident['title'] + (' · developer fixture' if origin=='fixture' else ''),incident['id'])
             return incident
 
-    def transition(self, identifier, action, actor='Operator', reason=''):
+    def annotate(self, kind, review):
+        """Attach a second opinion to the newest incident of this kind in the current session. Status never changes."""
+        with self.lock, self.db:
+            session = self.get('session')
+            row = self.db.execute('SELECT payload FROM incidents WHERE session_id=? AND epoch=? AND kind=? ORDER BY opened DESC LIMIT 1', (session['id'], session['epoch'], kind)).fetchone()
+            if not row:
+                return None
+            incident = json.loads(row[0])
+            incident['second_opinion'] = review
+            incident['revision'] += 1
+            self.save_incident(incident)
+            self.event('second_opinion', f"Claude second opinion on {incident['title'].lower()}: {review['assessment'].replace('_', ' ')}", incident['id'])
+            return incident
+
+    def transition(self, identifier, action, actor='Operator', reason='', channel='dashboard'):
         with self.lock, self.db:
             incident = self.incident(identifier)
             if not incident: raise KeyError(identifier)
@@ -84,13 +113,13 @@ class Store:
             valid = (action=='acknowledge' and incident['status']=='open') or (action=='resolve' and incident['status']=='acknowledged') or (action=='dismiss' and incident['status']=='open')
             if not valid: raise ValueError('Acknowledge before resolving; closed incidents cannot be changed.')
             incident['status']=target; incident['revision']+=1
-            if action=='acknowledge': incident['acknowledged_at']=time.time(); incident['assigned_responder']=actor
+            if action=='acknowledge': incident['acknowledged_at']=time.time(); incident['assigned_responder']=actor; incident['acknowledged_via']=channel
             if action=='resolve': incident['resolved_at']=time.time()
             if action in ('resolve','dismiss'): incident['closed_at']=time.time()
             if reason: incident['reason']=reason
             self.save_incident(incident)
             self.db.execute("UPDATE jobs SET status='canceled' WHERE incident_id=? AND status='queued'",(identifier,))
-            self.event('incident_'+target,f'{actor} {target} the incident')
+            self.event('incident_'+target,f'{actor} {target} the incident'+(f' via {channel}' if action=='acknowledge' else ''),identifier)
             return incident
 
     def decline(self, identifier, actor='Operator'):
@@ -104,7 +133,7 @@ class Store:
             self.save_incident(incident)
             self.db.execute("UPDATE jobs SET status='canceled' WHERE incident_id=? AND step=0 AND status='queued'",(identifier,))
             self.db.execute("UPDATE jobs SET due=? WHERE incident_id=? AND step=1 AND status='queued'",(time.time(),identifier))
-            self.event('caregiver_declined',actor+' cannot respond · backup escalation requested')
+            self.event('caregiver_declined',actor+' cannot respond · backup escalation requested',identifier)
             return incident
 
     def claim_due(self):

@@ -59,3 +59,21 @@ def test_decline_expedites_only_one_backup_and_rejects_stale(tmp_path):
     assert store.claim_due() is None
     store.reset()
     with pytest.raises(ValueError):store.decline(incident['id'],'Alex')
+
+
+def test_every_kind_has_title_phrase_and_limitations(tmp_path):
+    from server.store import KINDS
+    store=Store(tmp_path/'test.sqlite3')
+    for kind,(title,phrase,limitations) in KINDS.items():
+        incident=store.observe(kind,['Observed'],'local_rule')
+        assert incident['title']==title and incident['limitations']==limitations and phrase.endswith('.')
+    assert all(KINDS[k][2] for k in ('distress','fall','rhythmic','stillness'))  # Every health-related kind states what video cannot tell.
+
+
+def test_acknowledgment_records_channel_first_wins(tmp_path):
+    store=Store(tmp_path/'test.sqlite3');incident=store.observe('fall',['Rapid drop'],'local_rule')
+    first=store.transition(incident['id'],'acknowledge','Alex',channel='voice')
+    assert first['assigned_responder']=='Alex' and first['acknowledged_via']=='voice'
+    again=store.transition(incident['id'],'acknowledge','Jamie',channel='dashboard')
+    assert again['assigned_responder']=='Alex' and again['acknowledged_via']=='voice'
+    assert 'via voice' in store.events()[0]['message']

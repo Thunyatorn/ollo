@@ -5,6 +5,7 @@ import {
   Circle,
   Phone,
   ScanLine,
+  Sparkles,
   X,
 } from "lucide-react";
 import type { LookoutState } from "./types";
@@ -23,6 +24,7 @@ export default function EventTrace({
   onSelect,
   onAction,
   onSeek,
+  onReport,
 }: {
   state: LookoutState;
   room: number;
@@ -30,6 +32,7 @@ export default function EventTrace({
   onSelect: (id: string | null) => void;
   onAction: (id: string, action: string) => void;
   onSeek: (seconds: number) => void;
+  onReport: (id: string) => void;
 }) {
   const incidents = room === 0 ? state.incidents : [];
   return (
@@ -92,17 +95,63 @@ export default function EventTrace({
                         ? "Needs review"
                         : incident.status}
                     </span>
+                    {incident.assigned_responder &&
+                      (incident.status === "acknowledged" ||
+                        incident.status === "resolved") && (
+                        <span className="trace-owner">
+                          Handled by {incident.assigned_responder}
+                          {incident.acknowledged_via &&
+                            ` via ${incident.acknowledged_via}`}
+                        </span>
+                      )}
                   </div>
                   <ChevronDown size={13} />
                 </button>
                 {expanded && (
                   <div className="trace-detail">
                     <p>{incident.observations[0]}</p>
-                    {incident.kind === "distress" && (
-                      <p className="trace-limitation">
-                        Possible concern only. Airway status cannot be
-                        determined from video.
+                    {incident.limitations?.map((text) => (
+                      <p className="trace-limitation" key={text}>
+                        Possible concern only. {text}
                       </p>
+                    ))}
+                    {incident.second_opinion && (
+                      <div className="trace-opinion">
+                        <div>
+                          <Sparkles size={13} />
+                          <strong>Claude second opinion</strong>
+                        </div>
+                        <span>
+                          {
+                            {
+                              concern_visible: "Concern visible",
+                              benign_explanation_likely:
+                                "Benign explanation likely",
+                              insufficient_view: "Cannot tell from this view",
+                            }[incident.second_opinion.assessment]
+                          }{" "}
+                          · {incident.second_opinion.visibility} view
+                        </span>
+                        {incident.second_opinion.observations
+                          .slice(0, 2)
+                          .map((o) => (
+                            <p key={o.frame_seq + o.description}>
+                              {o.description}
+                            </p>
+                          ))}
+                        {incident.second_opinion.alternative_explanations[0] && (
+                          <p>
+                            Alternative:{" "}
+                            {incident.second_opinion.alternative_explanations[0]}
+                          </p>
+                        )}
+                        <small>
+                          Context only. It never delays, cancels, or downgrades
+                          the alert. Faces blurred · {incident.second_opinion.model}
+                          {incident.second_opinion.cost_usd != null &&
+                            ` · $${incident.second_opinion.cost_usd.toFixed(4)}`}
+                        </small>
+                      </div>
                     )}
                     {incident.primary_due_at && (
                       <div className="trace-call">
@@ -142,6 +191,18 @@ export default function EventTrace({
                         })}
                       </div>
                     )}
+                    {incident.clip_url && (
+                      <figure className="trace-clip">
+                        <video
+                          src={incident.clip_url}
+                          controls
+                          muted
+                          playsInline
+                          preload="metadata"
+                        />
+                        <figcaption>Evidence clip · 5 s before to 5 s after · heads blurred</figcaption>
+                      </figure>
+                    )}
                     <div className="trace-actions">
                       {incident.status === "open" && (
                         <button
@@ -178,6 +239,12 @@ export default function EventTrace({
                           Jump to moment
                         </button>
                       )}
+                      <button
+                        className="text-button"
+                        onClick={() => onReport(incident.id)}
+                      >
+                        Report
+                      </button>
                     </div>
                   </div>
                 )}

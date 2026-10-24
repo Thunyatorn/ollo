@@ -3,6 +3,7 @@ import {
   Activity,
   ArrowUpRight,
   Bell,
+  Cctv,
   Check,
   CheckCheck,
   ChevronDown,
@@ -14,12 +15,14 @@ import {
   Grid2X2,
   History,
   LockKeyhole,
+  Map as MapIcon,
   Maximize2,
   Pause,
   Phone,
   Play,
   Plus,
   RotateCcw,
+  Ruler,
   ScanLine,
   Settings2,
   Shield,
@@ -35,6 +38,76 @@ import {
 import type { LookoutState } from "./types";
 import { initialState, request } from "./api";
 import EventTrace from "./EventTrace";
+// COCO keypoint pairs drawn as limbs (UI-6).
+const LIMBS = [
+  [0, 1], [0, 2], [1, 3], [2, 4], [5, 6], [5, 7], [7, 9], [6, 8],
+  [8, 10], [5, 11], [6, 12], [11, 12], [11, 13], [13, 15], [12, 14], [14, 16],
+];
+type FloorPlanData = NonNullable<LookoutState["floor_plan"]>;
+type Overlay = NonNullable<LookoutState["overlays"]>[number];
+// UI-4: top-down inset in meters, scaled to fit everything it shows.
+function FloorPlan({ plan, people }: { plan: FloorPlanData; people: Overlay[] }) {
+  const pts = [
+    ...plan.points,
+    ...plan.zones.flatMap((z) => z.polygon),
+    ...plan.landmarks.flatMap((l) => l.polygon),
+    ...people.flatMap((p) => [p.floor, ...(p.approach?.floor_path || [])].filter(Boolean) as number[][]),
+  ];
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  const minX = Math.min(...xs) - 0.5, minY = Math.min(...ys) - 0.5;
+  const w = Math.max(...xs) + 0.5 - minX, h = Math.max(...ys) + 0.5 - minY;
+  const unit = Math.max(w, h) / 100;
+  const poly = (p: number[][]) => p.map((v) => v.join(",")).join(" ");
+  return (
+    <svg viewBox={`${minX} ${minY} ${w} ${h}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Floor plan in meters">
+      {plan.zones.map((z) => (
+        <polygon key={z.id} className="fp-zone" points={poly(z.polygon)} vectorEffect="non-scaling-stroke" />
+      ))}
+      {plan.landmarks.map((l) => (
+        <polygon key={l.id} className="fp-landmark" points={poly(l.polygon)} vectorEffect="non-scaling-stroke" />
+      ))}
+      {plan.points.map((p, i) => (
+        <circle key={i} className="fp-ref" cx={p[0]} cy={p[1]} r={unit * 0.8} />
+      ))}
+      {people.map((p, i) =>
+        p.approach?.warning && p.approach.floor_path ? (
+          <line
+            key={`path-${p.id || i}`}
+            className="fp-path"
+            x1={p.approach.floor_path[0][0]}
+            y1={p.approach.floor_path[0][1]}
+            x2={p.approach.floor_path[1][0]}
+            y2={p.approach.floor_path[1][1]}
+            vectorEffect="non-scaling-stroke"
+          />
+        ) : null,
+      )}
+      {people.map((p, i) =>
+        p.floor ? (
+          <g key={`p-${p.id || i}`} className={`fp-person ${p.approach?.warning ? "warned" : ""}`}>
+            <circle cx={p.floor[0]} cy={p.floor[1]} r={unit * 2.2} />
+            <text x={p.floor[0] + unit * 3} y={p.floor[1] + unit * 1.5} fontSize={unit * 6}>
+              {p.track_id ?? i + 1}
+            </text>
+          </g>
+        ) : null,
+      )}
+      <line className="fp-scale" x1={minX + unit * 4} y1={minY + h - unit * 4} x2={minX + unit * 4 + 1} y2={minY + h - unit * 4} vectorEffect="non-scaling-stroke" />
+      <text className="fp-scale-label" x={minX + unit * 4} y={minY + h - unit * 6} fontSize={unit * 5}>1 m</text>
+    </svg>
+  );
+}
+// Rhythmic-movement analysis needs at least 8 analyzed frames per second.
+const ANALYSIS_FPS = 12;
+type Landmark = { id: string; name: string; vertices: number[][] };
+type Rule = {
+  id: string;
+  landmark_id: string;
+  schedule: { type: "always" | "window" | "nap"; start?: string; end?: string };
+  severity: string;
+  summary: string;
+  status: "draft" | "active";
+};
 const demoTracks = [
   { x: 9.3, y: 40.1, w: 9, h: 25.2 },
   { x: 40.1, y: 36.2, w: 6.8, h: 16.4 },
@@ -87,6 +160,9 @@ export default function App() {
     [toast, setToast] = useState(""),
     [scenarioOpen, setScenarioOpen] = useState(false),
     [sourceOpen, setSourceOpen] = useState(false),
+    [cameraSpec, setCameraSpec] = useState(""),
+    [cameraMessage, setCameraMessage] = useState(""),
+    [serverFrame, setServerFrame] = useState(""),
     [muted, setMuted] = useState(true),
     [settingsTab, setSettingsTab] = useState("General"),
     [form, setForm] = useState({
@@ -100,7 +176,26 @@ export default function App() {
     [analysisReady, setAnalysisReady] = useState(false),
     [mediaAspect, setMediaAspect] = useState(1.6),
     [stageAspect, setStageAspect] = useState(1.6),
-    [cloudEnabled, setCloudEnabled] = useState(false);
+    [cloudEnabled, setCloudEnabled] = useState(false),
+    [calibrating, setCalibrating] = useState(false),
+    [floorOpen, setFloorOpen] = useState(false),
+    [calPoints, setCalPoints] = useState<
+      { u: number; v: number; x: string; y: string }[]
+    >([]),
+    [calMessage, setCalMessage] = useState(""),
+    [rulesOpen, setRulesOpen] = useState(false),
+    [drawing, setDrawing] = useState(false),
+    [drawPoints, setDrawPoints] = useState<{ u: number; v: number }[]>([]),
+    [landmarkName, setLandmarkName] = useState(""),
+    [ruleText, setRuleText] = useState(""),
+    [ruleBusy, setRuleBusy] = useState(false),
+    [ruleMessage, setRuleMessage] = useState(""),
+    [report, setReport] = useState<{
+      id: string;
+      markdown: string;
+      source: "claude" | "facts";
+      removed_lines: number;
+    } | null>(null);
   const video = useRef<HTMLVideoElement>(null),
     file = useRef<HTMLInputElement>(null),
     stage = useRef<HTMLDivElement>(null),
@@ -112,6 +207,127 @@ export default function App() {
   const active = state.incidents.find(
     (i) => i.status === "open" || i.status === "acknowledged",
   );
+  const visibleOverlays = (state.overlays || []).filter(
+    (o) =>
+      o.epoch === state.session.epoch &&
+      Math.abs(o.media_time_ms - position * 1000) < 500,
+  );
+  const savedCalibration = state.settings.calibration as
+    | {
+        error_m: number;
+        ignored: number[];
+        points: { image: number[]; floor: number[] }[];
+      }
+    | undefined;
+  const calibrationReady =
+    calPoints.length >= 4 &&
+    calPoints.every(
+      (p) =>
+        p.x.trim() !== "" &&
+        p.y.trim() !== "" &&
+        Number.isFinite(Number(p.x)) &&
+        Number.isFinite(Number(p.y)),
+    );
+  const landmarks = (state.settings.landmarks || []) as Landmark[];
+  const rules = (state.settings.rules || []) as Rule[];
+  const draftLandmarks = new Set(
+    rules.filter((r) => r.status === "draft").map((r) => r.landmark_id),
+  );
+  const ruleLandmarks = new Set(
+    rules.filter((r) => r.status === "active").map((r) => r.landmark_id),
+  );
+  const scheduleLabel = (r: Rule) =>
+    r.schedule.type === "window"
+      ? `${r.schedule.start}–${r.schedule.end}`
+      : r.schedule.type === "nap"
+        ? "During nap mode"
+        : "Always";
+  async function ruleAction(run: () => Promise<LookoutState>, done: string) {
+    try {
+      setState(await run());
+      setRuleMessage(done);
+    } catch (e) {
+      setRuleMessage(e instanceof Error ? e.message : "Request failed");
+    }
+  }
+  async function saveLandmark() {
+    await ruleAction(
+      () =>
+        request("/landmarks", {
+          name: landmarkName,
+          vertices: drawPoints.map((p) => [p.u, p.v]),
+        }),
+      `Landmark "${landmarkName.trim()}" saved.`,
+    );
+    setDrawing(false);
+    setDrawPoints([]);
+    setLandmarkName("");
+  }
+  async function draftRule() {
+    setRuleBusy(true);
+    try {
+      const body = await request<LookoutState & { rule?: Rule; question?: string }>(
+        "/rules/draft",
+        { text: ruleText },
+      );
+      setState(body);
+      if (body.rule) {
+        setRuleMessage("Draft ready. Check the outlined landmark, then confirm.");
+        setRuleText("");
+      } else setRuleMessage(body.question || "Claude needs more detail.");
+    } catch (e) {
+      setRuleMessage(e instanceof Error ? e.message : "Drafting failed");
+    }
+    setRuleBusy(false);
+  }
+  function toggleCalibration() {
+    setRulesOpen(false);
+    setDrawing(false);
+    if (calibrating) {
+      setCalibrating(false);
+      return;
+    }
+    setCalPoints(
+      savedCalibration?.points.map((p) => ({
+        u: p.image[0],
+        v: p.image[1],
+        x: String(p.floor[0]),
+        y: String(p.floor[1]),
+      })) || [],
+    );
+    setCalMessage(
+      savedCalibration
+        ? `Saved calibration · average error ${savedCalibration.error_m.toFixed(2)} m`
+        : "",
+    );
+    setCalibrating(true);
+  }
+  async function saveCalibration() {
+    try {
+      const next = await request("/calibration", {
+        points: calPoints.map((p) => ({
+          image: [p.u, p.v],
+          floor: [Number(p.x), Number(p.y)],
+        })),
+      });
+      setState(next);
+      const saved = next.settings.calibration as { error_m: number; ignored: number[] };
+      setCalMessage(
+        `Saved · average error ${saved.error_m.toFixed(2)} m${saved.ignored.length ? ` · ignored point ${saved.ignored.map((i) => i + 1).join(", ")}` : ""}. Predictive warnings are on.`,
+      );
+    } catch (e) {
+      setCalMessage(e instanceof Error ? e.message : "Calibration failed");
+    }
+  }
+  async function clearCalibration() {
+    try {
+      setState(await request("/calibration", undefined, "DELETE"));
+      setCalPoints([]);
+      setCalMessage("Calibration removed. Predictive warnings are off.");
+    } catch {
+      setCalMessage("Could not remove the calibration");
+    }
+  }
   const mediaRect =
     mediaAspect > stageAspect
       ? {
@@ -170,6 +386,11 @@ export default function App() {
           setConnected(true);
           if (!settingsHydrated.current) {
             settingsHydrated.current = true;
+            // SRC-4: the server camera keeps running without this page, so a reload returns to it.
+            if (s.session.source_type === "server_camera") {
+              setSourceType("server");
+              setAnalysisReady(true);
+            }
             setCloudEnabled(s.settings.cloud_review_enabled === true);
             setForm({
               room_label: s.camera.room_label,
@@ -198,10 +419,15 @@ export default function App() {
   }, [playing, source]);
   useEffect(() => {
     if (!source && sourceType !== "webcam") return;
+    // One reused canvas; skip a tick while the previous upload is in flight so slow
+    // analysis sheds frames instead of queueing stale ones.
+    const canvas = document.createElement("canvas");
+    let inFlight = false;
     const id = setInterval(() => {
       const v = video.current,
         s = stateRef.current;
       if (
+        inFlight ||
         !v ||
         v.paused ||
         v.readyState < 2 ||
@@ -210,23 +436,65 @@ export default function App() {
         s.session.status !== "active"
       )
         return;
-      const canvas = document.createElement("canvas");
       canvas.width = 640;
       canvas.height = Math.round((640 * v.videoHeight) / v.videoWidth);
       canvas.getContext("2d")?.drawImage(v, 0, 0, canvas.width, canvas.height);
-      request("/frames", {
+      inFlight = true;
+      request<{ overlays?: LookoutState["overlays"] }>("/frames", {
         session_id: s.session.id,
         epoch: s.session.epoch,
         frame_seq: ++seq.current,
         media_time_ms: Math.round(v.currentTime * 1000),
         image: canvas.toDataURL("image/jpeg", 0.65).split(",")[1],
-      }).catch(() => {
-        setAnalysisReady(false);
-        notify("Frame analysis connection failed. Video continues locally.");
-      });
-    }, 500);
+      })
+        .then((r) => {
+          if (r.overlays) setState((prev) => ({ ...prev, overlays: r.overlays }));
+        })
+        .catch(() => {
+          setAnalysisReady(false);
+          notify("Frame analysis connection failed. Video continues locally.");
+        })
+        .finally(() => {
+          inFlight = false;
+        });
+    }, 1000 / ANALYSIS_FPS);
     return () => clearInterval(id);
   }, [source, sourceType, connected, analysisReady]);
+  useEffect(() => {
+    if (sourceType !== "server" || !connected) return;
+    // SRC-4: the server analyzes its own camera. This page only shows each analyzed frame with
+    // the overlays computed from it, by long polling, so a hidden tab never slows analysis.
+    const abort = new AbortController();
+    (async () => {
+      let after = -1;
+      while (!abort.signal.aborted) {
+        try {
+          const r = await fetch(`/api/camera/frame?after=${after}`, {
+            signal: abort.signal,
+          });
+          if (r.status === 204) continue;
+          if (r.ok) {
+            const f: {
+              frame_seq: number;
+              media_time_ms: number;
+              image: string;
+              overlays: LookoutState["overlays"];
+            } = await r.json();
+            after = f.frame_seq;
+            setServerFrame(`data:image/jpeg;base64,${f.image}`);
+            setPosition(f.media_time_ms / 1000);
+            setState((prev) => ({ ...prev, overlays: f.overlays }));
+            continue;
+          }
+        } catch {
+          if (abort.signal.aborted) return;
+        }
+        // No server camera yet, or the server is restarting.
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    })();
+    return () => abort.abort();
+  }, [sourceType, connected]);
   async function scenario(kind: string) {
     setScenarioOpen(false);
     stream.current?.getTracks().forEach((t) => t.stop());
@@ -322,7 +590,11 @@ export default function App() {
           },
     );
   }
-  async function action(id: string, kind: string) {
+  async function action(
+    id: string,
+    kind: string,
+    channel: "dashboard" | "app" = "dashboard",
+  ) {
     if (connected) {
       try {
         setState(
@@ -333,7 +605,7 @@ export default function App() {
                   reason: "Reviewed and dismissed by operator",
                   actor: state.caregivers[0]?.name || "Caregiver",
                 }
-              : { actor: state.caregivers[0]?.name || "Caregiver" },
+              : { actor: state.caregivers[0]?.name || "Caregiver", channel },
           ),
         );
         notify(
@@ -446,6 +718,37 @@ export default function App() {
       notify("Camera access unavailable. You can upload a recording instead.");
     }
   }
+  async function serverCamera() {
+    if (!connected) {
+      setCameraMessage("Start the NestWatch server to use a server camera.");
+      return;
+    }
+    setBusy(true);
+    setCameraMessage("");
+    try {
+      setState(
+        await request("/source", {
+          source_type: "server_camera",
+          camera: cameraSpec.trim(),
+        }),
+      );
+      setState(await request("/session/start", {}));
+      stream.current?.getTracks().forEach((t) => t.stop());
+      if (source.startsWith("blob:")) URL.revokeObjectURL(source);
+      setSource("");
+      setServerFrame("");
+      setSourceType("server");
+      setRoom(0);
+      setPosition(0);
+      setPlaying(true);
+      setAnalysisReady(true);
+      setSourceOpen(false);
+      notify("Server camera connected. Analysis continues when this tab is hidden.");
+    } catch (e) {
+      setCameraMessage(e instanceof Error ? e.message : "Could not connect the camera");
+    }
+    setBusy(false);
+  }
   async function togglePlay() {
     const next = !playing;
     setPlaying(next);
@@ -492,7 +795,7 @@ export default function App() {
       <div className="mobile-response">
         <div className="brand">
           <Eye size={25} />
-          lookout<span className="beta">CAREGIVER</span>
+          NestWatch<span className="beta">CAREGIVER</span>
         </div>
         <div className="mobile-response-card">
           <span className="eyebrow">CAREGIVER RESPONSE</span>
@@ -509,6 +812,13 @@ export default function App() {
                 ))}
               </div>
               <span className="pill amber">{incident.status}</span>
+              {incident.assigned_responder &&
+                ["acknowledged", "resolved"].includes(incident.status) && (
+                  <p className="mobile-owner">
+                    Handled by {incident.assigned_responder} via{" "}
+                    {incident.acknowledged_via || "dashboard"}
+                  </p>
+                )}
               <p className="muted">
                 Acknowledging means you are responding. Resolve only after
                 checking the room.
@@ -516,7 +826,7 @@ export default function App() {
               {incident.status === "open" ? (
                 <button
                   className="button primary full"
-                  onClick={() => action(incident.id, "acknowledge")}
+                  onClick={() => action(incident.id, "acknowledge", "app")}
                 >
                   <Check size={18} />I am responding
                 </button>
@@ -536,7 +846,7 @@ export default function App() {
                     : "Incident dismissed after review."}
                 </div>
               )}
-              {["open", "acknowledged"].includes(incident.status) && (
+              {incident.status === "open" && (
                 <button
                   className="button full"
                   disabled={mobileDone}
@@ -592,10 +902,10 @@ export default function App() {
           <button
             className="brand compact-brand"
             onClick={() => setPage("monitor")}
-            aria-label="Lookout monitor"
+            aria-label="NestWatch monitor"
           >
             <Eye size={23} strokeWidth={1.6} />
-            lookout
+            NestWatch
           </button>
           <div className="topbar-nav">
             {page !== "monitor" && (
@@ -653,7 +963,9 @@ export default function App() {
                         <span />{" "}
                         {sourceType === "webcam"
                           ? "LIVE WEBCAM"
-                          : sourceType === "recording"
+                          : sourceType === "server"
+                            ? "SERVER CAMERA"
+                            : sourceType === "recording"
                             ? "RECORDED VIDEO"
                             : "ILLUSTRATIVE DEMO"}
                       </span>
@@ -663,6 +975,50 @@ export default function App() {
                         onClick={() => setZones(!zones)}
                       >
                         <Focus size={16} />
+                      </button>
+                      <button
+                        className={`icon-button ${floorOpen ? "enabled" : ""}`}
+                        title={
+                          sourceType === "illustration"
+                            ? "Connect a video to see the floor plan"
+                            : "Floor plan"
+                        }
+                        aria-label="Floor plan"
+                        disabled={sourceType === "illustration"}
+                        onClick={() => setFloorOpen(!floorOpen)}
+                      >
+                        <MapIcon size={16} />
+                      </button>
+                      <button
+                        className={`icon-button ${rulesOpen ? "enabled" : ""}`}
+                        title={
+                          sourceType === "illustration"
+                            ? "Connect a video to set up rules"
+                            : "Rules and landmarks"
+                        }
+                        aria-label="Rules and landmarks"
+                        disabled={sourceType === "illustration"}
+                        onClick={() => {
+                          setCalibrating(false);
+                          setDrawing(false);
+                          setRuleMessage("");
+                          setRulesOpen(!rulesOpen);
+                        }}
+                      >
+                        <Shield size={16} />
+                      </button>
+                      <button
+                        className={`icon-button ${calibrating ? "enabled" : ""}`}
+                        title={
+                          sourceType === "illustration"
+                            ? "Connect a video to calibrate the floor"
+                            : "Calibrate floor for predictive warnings"
+                        }
+                        aria-label="Calibrate floor"
+                        disabled={sourceType === "illustration"}
+                        onClick={toggleCalibration}
+                      >
+                        <Ruler size={16} />
                       </button>
                       <button
                         className="icon-button"
@@ -713,6 +1069,24 @@ export default function App() {
                                   );
                             }}
                           />
+                        ) : sourceType === "server" ? (
+                          serverFrame ? (
+                            <img
+                              className="server-frame"
+                              src={serverFrame}
+                              alt="Server camera picture"
+                              onLoad={(e) =>
+                                setMediaAspect(
+                                  e.currentTarget.naturalWidth /
+                                    e.currentTarget.naturalHeight,
+                                )
+                              }
+                            />
+                          ) : (
+                            <div className="server-frame waiting">
+                              Connecting to {state.camera.capture?.source || "the camera"}…
+                            </div>
+                          )
                         ) : (
                           <div className="demo-scene">
                             <img
@@ -766,9 +1140,11 @@ export default function App() {
                             <span>
                               {sourceType === "illustration"
                                 ? "Fixture mode"
-                                : connected
-                                  ? "Frame stream"
-                                  : "Local playback"}
+                                : sourceType === "server"
+                                  ? "Server capture"
+                                  : connected
+                                    ? "Frame stream"
+                                    : "Local playback"}
                             </span>
                           </div>
                           <div className="camera-clock">
@@ -777,7 +1153,148 @@ export default function App() {
                           </div>
                         </div>
                         {sourceType !== "illustration" && (
-                          <div className="real-video-overlay" style={mediaRect}>
+                          <div
+                            className={`real-video-overlay ${calibrating || drawing ? "calibrating" : ""}`}
+                            style={mediaRect}
+                            onClick={(e) => {
+                              if (!calibrating && !drawing) return;
+                              const r = e.currentTarget.getBoundingClientRect();
+                              const u = (e.clientX - r.left) / r.width,
+                                v = (e.clientY - r.top) / r.height;
+                              if (u < 0 || u > 1 || v < 0 || v > 1) return;
+                              if (drawing)
+                                setDrawPoints((points) =>
+                                  points.length >= 12 ? points : [...points, { u, v }],
+                                );
+                              else
+                                setCalPoints((points) =>
+                                  points.length >= 20
+                                    ? points
+                                    : [...points, { u, v, x: "", y: "" }],
+                                );
+                            }}
+                          >
+                            <svg
+                              className="approach-paths"
+                              viewBox="0 0 1000 1000"
+                              preserveAspectRatio="none"
+                            >
+                              {landmarks
+                                .filter(
+                                  (l) =>
+                                    rulesOpen ||
+                                    draftLandmarks.has(l.id) ||
+                                    (zones && ruleLandmarks.has(l.id)),
+                                )
+                                .map((l) => (
+                                  <polygon
+                                    key={l.id}
+                                    className={`landmark-shape ${draftLandmarks.has(l.id) ? "draft" : ruleLandmarks.has(l.id) ? "ruled" : ""}`}
+                                    points={l.vertices
+                                      .map((v) => `${v[0] * 1000},${v[1] * 1000}`)
+                                      .join(" ")}
+                                    vectorEffect="non-scaling-stroke"
+                                  />
+                                ))}
+                              {drawing && drawPoints.length > 1 && (
+                                <polyline
+                                  className="landmark-shape draft"
+                                  points={drawPoints
+                                    .map((p) => `${p.u * 1000},${p.v * 1000}`)
+                                    .join(" ")}
+                                  vectorEffect="non-scaling-stroke"
+                                />
+                              )}
+                              {visibleOverlays.map((o, i) =>
+                                o.keypoints ? (
+                                  <g key={`sk-${o.id || i}`} className="skeleton">
+                                    {LIMBS.filter(
+                                      ([a, b]) =>
+                                        (o.keypoints![a]?.[2] ?? 0) >= 0.4 &&
+                                        (o.keypoints![b]?.[2] ?? 0) >= 0.4,
+                                    ).map(([a, b]) => (
+                                      <line
+                                        key={`${a}-${b}`}
+                                        x1={o.keypoints![a][0] * 1000}
+                                        y1={o.keypoints![a][1] * 1000}
+                                        x2={o.keypoints![b][0] * 1000}
+                                        y2={o.keypoints![b][1] * 1000}
+                                        vectorEffect="non-scaling-stroke"
+                                      />
+                                    ))}
+                                  </g>
+                                ) : null,
+                              )}
+                              {visibleOverlays.map((o, i) =>
+                                o.approach?.warning && o.approach.path ? (
+                                  <line
+                                    key={o.id || i}
+                                    x1={o.approach.path[0][0] * 1000}
+                                    y1={o.approach.path[0][1] * 1000}
+                                    x2={o.approach.path[1][0] * 1000}
+                                    y2={o.approach.path[1][1] * 1000}
+                                    stroke="#e4be86"
+                                    strokeWidth="2"
+                                    strokeDasharray="6 4"
+                                    vectorEffect="non-scaling-stroke"
+                                  />
+                                ) : null,
+                              )}
+                            </svg>
+                            {visibleOverlays.map((o, i) =>
+                              o.approach?.warning && o.approach.path ? (
+                                <span
+                                  key={`end-${o.id || i}`}
+                                  className="approach-end"
+                                  style={{
+                                    left: `${o.approach.path[1][0] * 100}%`,
+                                    top: `${o.approach.path[1][1] * 100}%`,
+                                  }}
+                                />
+                              ) : null,
+                            )}
+                            {landmarks
+                              .filter(
+                                (l) =>
+                                  rulesOpen ||
+                                  draftLandmarks.has(l.id) ||
+                                  (zones && ruleLandmarks.has(l.id)),
+                              )
+                              .map((l) => (
+                                <span
+                                  key={`name-${l.id}`}
+                                  className="landmark-name"
+                                  style={{
+                                    left: `${(l.vertices.reduce((a, v) => a + v[0], 0) / l.vertices.length) * 100}%`,
+                                    top: `${(l.vertices.reduce((a, v) => a + v[1], 0) / l.vertices.length) * 100}%`,
+                                  }}
+                                >
+                                  {l.name}
+                                </span>
+                              ))}
+                            {drawing &&
+                              drawPoints.map((p, i) => (
+                                <span
+                                  key={`draw-${i}`}
+                                  className="cal-point"
+                                  style={{ left: `${p.u * 100}%`, top: `${p.v * 100}%` }}
+                                >
+                                  {i + 1}
+                                </span>
+                              ))}
+                            {calibrating &&
+                              calPoints.map((p, i) => (
+                                <span
+                                  key={`cal-${i}`}
+                                  className="cal-point"
+                                  style={{
+                                    left: `${p.u * 100}%`,
+                                    top: `${p.v * 100}%`,
+                                  }}
+                                >
+                                  {i + 1}
+                                </span>
+                              ))}
                             {zones && (
                               <svg
                                 viewBox="0 0 1000 1000"
@@ -806,43 +1323,318 @@ export default function App() {
                                 />
                               </svg>
                             )}
-                            {state.overlays
-                              ?.filter(
-                                (o) =>
-                                  o.epoch === state.session.epoch &&
-                                  Math.abs(o.media_time_ms - position * 1000) <
-                                    500,
-                              )
-                              .map((o, i) => (
-                                <div
-                                  key={i}
-                                  className="tracking-box"
-                                  style={{
-                                    left: `${o.x * 100}%`,
-                                    top: `${o.y * 100}%`,
-                                    width: `${o.width * 100}%`,
-                                    height: `${o.height * 100}%`,
-                                  }}
-                                >
-                                  <span>{o.label}</span>
+                            {visibleOverlays.map((o, i) => (
+                              <div
+                                key={o.id || i}
+                                className={`tracking-box ${o.approach?.warning ? "approaching" : ""}`}
+                                style={{
+                                  left: `${o.x * 100}%`,
+                                  top: `${o.y * 100}%`,
+                                  width: `${o.width * 100}%`,
+                                  height: `${o.height * 100}%`,
+                                }}
+                              >
+                                <span>
+                                  {o.approach?.warning
+                                    ? `${o.label.split(" · ")[0]} · Restricted area in ~${o.approach.eta_s ?? 3} s`
+                                    : o.label}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {floorOpen && sourceType !== "illustration" && (
+                          <div className="floor-plan">
+                            <span className="floor-plan-title">Floor plan · meters</span>
+                            {state.floor_plan ? (
+                              <FloorPlan plan={state.floor_plan} people={visibleOverlays} />
+                            ) : (
+                              <p>
+                                Calibrate the floor to see the floor plan (ruler
+                                button).
+                              </p>
+                            )}
+                          </div>
+                        )}
+                        {rulesOpen && (
+                          <div className="calibration-panel rules-panel">
+                            <strong>Rules</strong>
+                            <p>
+                              Describe a rule in your own words. Claude drafts
+                              it; nothing is enforced until you confirm.
+                            </p>
+                            <div className="rule-compose">
+                              <input
+                                aria-label="Describe a rule"
+                                placeholder="Keep kids away from the kitchen gate during nap time"
+                                value={ruleText}
+                                maxLength={300}
+                                onChange={(e) => setRuleText(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" && ruleText.trim().length >= 3 && !ruleBusy)
+                                    draftRule();
+                                }}
+                              />
+                              <button
+                                className="button light"
+                                disabled={ruleText.trim().length < 3 || ruleBusy}
+                                onClick={draftRule}
+                              >
+                                {ruleBusy ? "Drafting…" : "Draft"}
+                              </button>
+                            </div>
+                            {ruleMessage && (
+                              <p className="calibration-message">{ruleMessage}</p>
+                            )}
+                            {rules.length > 0 && (
+                              <ul className="rule-list">
+                                {rules.map((r) => (
+                                  <li key={r.id} className={r.status}>
+                                    <div>
+                                      <span>{r.summary}</span>
+                                      <small>
+                                        {landmarks.find((l) => l.id === r.landmark_id)?.name} ·{" "}
+                                        {scheduleLabel(r)} · {r.severity} ·{" "}
+                                        {r.status === "draft" ? "draft, not enforced" : "active"}
+                                      </small>
+                                    </div>
+                                    {r.status === "draft" && (
+                                      <button
+                                        className="button light"
+                                        onClick={() =>
+                                          ruleAction(
+                                            () => request(`/rules/${r.id}/confirm`, {}),
+                                            "Rule confirmed and active.",
+                                          )
+                                        }
+                                      >
+                                        Confirm
+                                      </button>
+                                    )}
+                                    <button
+                                      className="button"
+                                      aria-label={`Remove rule: ${r.summary}`}
+                                      onClick={() =>
+                                        ruleAction(
+                                          () => request(`/rules/${r.id}`, undefined, "DELETE"),
+                                          "Rule removed.",
+                                        )
+                                      }
+                                    >
+                                      {r.status === "draft" ? "Discard" : "Remove"}
+                                    </button>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                            <strong className="panel-subhead">Landmarks</strong>
+                            {landmarks.length ? (
+                              <ul className="rule-list">
+                                {landmarks.map((l) => (
+                                  <li key={l.id}>
+                                    <div>
+                                      <span>{l.name}</span>
+                                    </div>
+                                    <button
+                                      className="button"
+                                      aria-label={`Remove landmark ${l.name}`}
+                                      onClick={() =>
+                                        ruleAction(
+                                          () => request(`/landmarks/${l.id}`, undefined, "DELETE"),
+                                          `Landmark "${l.name}" removed with its rules.`,
+                                        )
+                                      }
+                                    >
+                                      Remove
+                                    </button>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="calibration-empty">
+                                No landmarks yet. Draw the places your rules
+                                refer to, like a gate or the stairs.
+                              </p>
+                            )}
+                            {drawing ? (
+                              <div className="landmark-draw">
+                                <p>
+                                  Click 3 or more points around the place on the
+                                  video, then name it.
+                                </p>
+                                <input
+                                  aria-label="Landmark name"
+                                  placeholder="Kitchen gate"
+                                  value={landmarkName}
+                                  maxLength={40}
+                                  onChange={(e) => setLandmarkName(e.target.value)}
+                                />
+                                <div className="calibration-actions">
+                                  <button
+                                    className="button light"
+                                    disabled={drawPoints.length < 3 || !landmarkName.trim()}
+                                    onClick={saveLandmark}
+                                  >
+                                    Save landmark
+                                  </button>
+                                  <button
+                                    className="button"
+                                    onClick={() => setDrawPoints((p) => p.slice(0, -1))}
+                                    disabled={!drawPoints.length}
+                                  >
+                                    Undo point
+                                  </button>
+                                  <button
+                                    className="button"
+                                    onClick={() => {
+                                      setDrawing(false);
+                                      setDrawPoints([]);
+                                    }}
+                                  >
+                                    Cancel
+                                  </button>
                                 </div>
-                              ))}
+                              </div>
+                            ) : (
+                              <div className="calibration-actions">
+                                <button className="button" onClick={() => setDrawing(true)}>
+                                  Draw landmark
+                                </button>
+                                <button className="button" onClick={() => setRulesOpen(false)}>
+                                  Close
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {calibrating && (
+                          <div className="calibration-panel">
+                            <strong>Floor calibration</strong>
+                            <p>
+                              Click spots on the floor you can measure, such as
+                              tape marks or tile corners. Enter each one's
+                              position in meters from one corner of the room.
+                              Use 5 or more points so a mistyped measurement
+                              can be caught.
+                            </p>
+                            {calPoints.length ? (
+                              <ol>
+                                {calPoints.map((p, i) => (
+                                  <li key={i}>
+                                    <span>{i + 1}</span>
+                                    <label>
+                                      X m
+                                      <input
+                                        type="number"
+                                        step="0.1"
+                                        value={p.x}
+                                        aria-label={`Point ${i + 1} X in meters`}
+                                        onChange={(e) =>
+                                          setCalPoints((points) =>
+                                            points.map((q, j) =>
+                                              j === i ? { ...q, x: e.target.value } : q,
+                                            ),
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                    <label>
+                                      Y m
+                                      <input
+                                        type="number"
+                                        step="0.1"
+                                        value={p.y}
+                                        aria-label={`Point ${i + 1} Y in meters`}
+                                        onChange={(e) =>
+                                          setCalPoints((points) =>
+                                            points.map((q, j) =>
+                                              j === i ? { ...q, y: e.target.value } : q,
+                                            ),
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                    <button
+                                      aria-label={`Remove point ${i + 1}`}
+                                      onClick={() =>
+                                        setCalPoints((points) =>
+                                          points.filter((_, j) => j !== i),
+                                        )
+                                      }
+                                    >
+                                      <X size={12} />
+                                    </button>
+                                  </li>
+                                ))}
+                              </ol>
+                            ) : (
+                              <p className="calibration-empty">
+                                No points yet. Click the floor on the video.
+                              </p>
+                            )}
+                            {calMessage && (
+                              <p className="calibration-message">{calMessage}</p>
+                            )}
+                            <div className="calibration-actions">
+                              <button
+                                className="button light"
+                                disabled={!calibrationReady}
+                                onClick={saveCalibration}
+                              >
+                                Save
+                              </button>
+                              {savedCalibration && (
+                                <button className="button" onClick={clearCalibration}>
+                                  Remove saved
+                                </button>
+                              )}
+                              <button
+                                className="button"
+                                onClick={() => setCalibrating(false)}
+                              >
+                                Close
+                              </button>
+                            </div>
                           </div>
                         )}
                         {state.camera.health === "offline" && (
                           <div className="offline-message">
                             <WifiOff size={28} />
                             <h3>Analysis unavailable</h3>
-                            <p>
-                              Check the camera connection. Monitoring cannot be
-                              confirmed.
-                            </p>
-                            <button
-                              className="button"
-                              onClick={() => scenario("normal")}
-                            >
-                              Restore demo
-                            </button>
+                            {sourceType === "server" ? (
+                              <>
+                                <p>
+                                  No new frames from{" "}
+                                  {state.camera.capture?.source ||
+                                    state.session.camera_label ||
+                                    "the camera"}
+                                  . Reconnecting automatically. Monitoring
+                                  cannot be confirmed.
+                                </p>
+                                <button
+                                  className="button"
+                                  onClick={() => {
+                                    setCameraMessage("");
+                                    setSourceOpen(true);
+                                  }}
+                                >
+                                  Choose a source
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <p>
+                                  Check the camera connection. Monitoring cannot
+                                  be confirmed.
+                                </p>
+                                <button
+                                  className="button"
+                                  onClick={() => scenario("normal")}
+                                >
+                                  Restore demo
+                                </button>
+                              </>
+                            )}
                           </div>
                         )}
                         <div className="video-footer">
@@ -852,7 +1644,35 @@ export default function App() {
                               ? "AI-generated still · illustrative tracks"
                               : "Controlled demo source · no identity recognition"}
                           </span>
-                          <span>LOOKOUT / 01</span>
+                          {sourceType !== "illustration" &&
+                          state.session.status === "active" &&
+                          state.camera.analysis_fps !== undefined ? (
+                            <span
+                              className={
+                                state.camera.analysis_fps < 8 ||
+                                state.camera.health === "offline"
+                                  ? "analysis-rate low"
+                                  : "analysis-rate"
+                              }
+                              title={
+                                state.camera.analysis_fps < 8
+                                  ? `Rhythmic-movement checks need at least 8 analyzed frames per second.${sourceType === "server" ? "" : " Keep this tab visible."}`
+                                  : sourceType === "server"
+                                    ? "Frames analyzed per second by the server, whether or not this tab is visible"
+                                    : "Frames analyzed per second on this computer"
+                              }
+                            >
+                              {state.camera.detector === "pose"
+                                ? "Pose"
+                                : "Person"}{" "}
+                              ·{" "}
+                              {state.camera.health === "offline"
+                                ? "no frames"
+                                : `${state.camera.analysis_fps.toFixed(1)} fps`}
+                            </span>
+                          ) : (
+                            <span>NESTWATCH / 01</span>
+                          )}
                         </div>
                       </>
                     ) : (
@@ -926,7 +1746,9 @@ export default function App() {
                                     ? "fixture"
                                     : sourceType === "recording"
                                       ? state.session.media_id
-                                      : "webcam") &&
+                                      : sourceType === "server"
+                                        ? "server_camera"
+                                        : "webcam") &&
                                 i.media_time_ms <= duration * 1000,
                             )
                             .map((i) => (
@@ -1008,6 +1830,18 @@ export default function App() {
                   setPosition(time);
                   if (video.current) video.current.currentTime = time;
                 }}
+                onReport={async (id) => {
+                  try {
+                    const r = await request<{
+                      markdown: string;
+                      source: "claude" | "facts";
+                      removed_lines: number;
+                    }>(`/incidents/${id}/report`, undefined, "GET");
+                    setReport({ id, ...r });
+                  } catch (e) {
+                    notify(e instanceof Error ? e.message : "Report unavailable");
+                  }
+                }}
               />
             </section>
           </>
@@ -1052,7 +1886,7 @@ export default function App() {
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement("a");
                     a.href = url;
-                    a.download = "lookout-incidents.json";
+                    a.download = "nestwatch-incidents.json";
                     a.click();
                     URL.revokeObjectURL(url);
                   }}
@@ -1140,7 +1974,7 @@ export default function App() {
           </section>
         ) : (
           <section className="secondary-page settings-page">
-            <div className="eyebrow">MAKE LOOKOUT YOURS</div>
+            <div className="eyebrow">MAKE NESTWATCH YOURS</div>
             <h1>Workspace settings</h1>
             <p className="muted">
               Configure your space, responders, and monitoring preferences.
@@ -1185,7 +2019,7 @@ export default function App() {
                   <div className="settings-row">
                     <div>
                       <strong>Source</strong>
-                      <p>Prerecorded video or browser webcam</p>
+                      <p>Prerecorded video, browser webcam, or a camera the server reads</p>
                     </div>
                     <button
                       className="button"
@@ -1306,9 +2140,15 @@ export default function App() {
                   </div>
                   <div className="settings-row">
                     <div>
-                      <strong>Cloud distress review</strong>
+                      <strong>Claude second opinion</strong>
                       <p>
-                        Send consenting staged frames to configured Claude API.
+                        After a local alert, send up to 4 face-blurred crops of
+                        that person to the configured Claude model for context.
+                        Never delays or cancels an alert. Nothing is sent while
+                        nothing happens.
+                        {state.analysis?.cloud?.requests
+                          ? ` This session: ${state.analysis.cloud.requests} review${state.analysis.cloud.requests === 1 ? "" : "s"}${state.analysis.cloud.cost_known ? ` · $${state.analysis.cloud.cost_usd.toFixed(4)}` : ""}.`
+                          : ""}
                       </p>
                     </div>
                     <button
@@ -1337,8 +2177,9 @@ export default function App() {
                   <div className="info-note">
                     <Activity size={16} />
                     <p>
-                      Possible distress review is experimental. Video cannot
-                      establish airway status or confirm that a child is safe.
+                      Alerts come from local rules on this computer. Video
+                      cannot establish airway status or confirm that a child
+                      is safe.
                     </p>
                   </div>
                 </>
@@ -1400,6 +2241,59 @@ export default function App() {
           if (f) upload(f);
         }}
       />
+      {report && (
+        <div className="modal-backdrop" onClick={() => setReport(null)}>
+          <div
+            className="source-modal report-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Incident report"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-top">
+              <span className="eyebrow">
+                {report.source === "claude"
+                  ? "WRITTEN BY CLAUDE · EVERY LINE CITES LOGGED FACTS"
+                  : "PLAIN TIMELINE FROM LOGGED FACTS"}
+              </span>
+              <button
+                className="icon-button"
+                aria-label="Close report"
+                onClick={() => setReport(null)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            {report.removed_lines > 0 && (
+              <p className="muted">
+                {report.removed_lines} line{report.removed_lines === 1 ? "" : "s"}{" "}
+                removed for missing evidence or diagnosis language.
+              </p>
+            )}
+            <pre className="report-text">{report.markdown}</pre>
+            <div className="calibration-actions">
+              <button
+                className="button light"
+                onClick={() => {
+                  const url = URL.createObjectURL(
+                    new Blob([report.markdown], { type: "text/markdown" }),
+                  );
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `nestwatch-incident-${report.id.slice(0, 8)}.md`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+              >
+                <Download size={14} /> Download .md
+              </button>
+              <button className="button" onClick={() => setReport(null)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {sourceOpen && (
         <div className="modal-backdrop" onClick={() => setSourceOpen(false)}>
           <div
@@ -1450,6 +2344,44 @@ export default function App() {
               </span>
               <ArrowUpRight size={16} />
             </button>
+            <form
+              className="server-camera"
+              onSubmit={(e) => {
+                e.preventDefault();
+                serverCamera();
+              }}
+            >
+              <div className="source-option">
+                <Cctv size={20} />
+                <span>
+                  Camera read by the NestWatch server
+                  <small>
+                    Webcam index or RTSP/HTTP stream · analysis continues when
+                    this tab is hidden
+                  </small>
+                </span>
+              </div>
+              <div className="server-camera-row">
+                <input
+                  aria-label="Camera index or stream URL"
+                  placeholder="0, or rtsp://camera.local/stream"
+                  value={cameraSpec}
+                  onChange={(e) => setCameraSpec(e.target.value)}
+                />
+                <button
+                  className="button"
+                  type="submit"
+                  disabled={busy || !cameraSpec.trim()}
+                >
+                  Connect
+                </button>
+              </div>
+              {cameraMessage && (
+                <p className="server-camera-message" role="alert">
+                  {cameraMessage}
+                </p>
+              )}
+            </form>
             <button
               className="source-option"
               onClick={() => {
