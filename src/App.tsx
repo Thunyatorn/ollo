@@ -232,6 +232,12 @@ export default function App() {
     stateRef = useRef(state),
     settingsHydrated = useRef(false);
   stateRef.current = state;
+  // SRC-5: leaving the camera view (Settings, another camera) re-creates the <video>; give each new one the live camera.
+  const attachVideo = (element: HTMLVideoElement | null) => {
+    video.current = element;
+    if (element && sourceType === "webcam" && stream.current && element.srcObject !== stream.current)
+      element.srcObject = stream.current;
+  };
   const incidentDate = (at: string | number) => dateKey(new Date(typeof at === "number" ? at * 1000 : at));
   const datedState = reviewDate ? { ...state, incidents: state.incidents.filter(i => incidentDate(i.opened_at) === reviewDate) } : state;
   const currentSourceKey = sourceType === "illustration" ? "fixture" : sourceType === "recording" ? state.session.media_id : sourceType === "server" ? "server_camera" : "webcam";
@@ -1024,7 +1030,7 @@ export default function App() {
                       <>
                         {source || sourceType === "webcam" ? (
                           <video
-                            ref={video}
+                            ref={attachVideo}
                             src={source || undefined}
                             autoPlay
                             playsInline
