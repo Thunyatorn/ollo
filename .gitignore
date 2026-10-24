@@ -25,3 +25,4 @@ worker/.worker-token
 worker/.env
 worker/.venv/
 worker/.flows-*
+vision/certs/

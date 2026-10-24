@@ -67,6 +67,10 @@ cd vision
 ```
 The label format is in the script's header (same as the team's evaluator, plus optional calibration, zones and adult tags per clip).
 
+## Phone as the camera
+
+`python -m nestwatch_vision.main phone` makes the laptop wait for a phone's browser to send its camera over the local Wi-Fi. Steps and limits are in `docs/PHONE_CAMERA.md`.
+
 ## Tests
 
 `cd vision && .venv/bin/python -m pytest` runs the vision tests (about 30 s); `cd worker && .venv/bin/python -m pytest` the worker tests; `worker/scripts/flows.py` drives the four end-to-end flows against a local stack. `spacetime/scripts/test-local.sh` checks the role rules and the alert state machine against a local server

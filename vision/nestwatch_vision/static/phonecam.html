@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NestWatch phone camera</title>
+<style>
+  :root { --paper:#fff; --ink:#111; --muted:#555; --rule:#222; --ok:#1b6b2a; --bad:#a11; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink); font:17px/1.45 "Times New Roman", Times, serif; }
+  main { max-width:30rem; margin:0 auto; padding:1rem 16px 2rem; }
+  h1 { font-size:1.4rem; margin:0 0 .2rem; text-align:center; }
+  .sub { text-align:center; color:var(--muted); margin:0 0 .8rem; }
+  hr { border:0; border-top:1px solid var(--rule); margin:.8rem 0; }
+  video { width:100%; background:#000; border:1px solid var(--rule); display:block; min-height:8rem; }
+  button { font:inherit; padding:.6rem 1rem; border:1px solid var(--rule); background:#e8f0e8; color:var(--ink); cursor:pointer; }
+  button:disabled { color:#888; background:#f2f2f2; cursor:default; }
+  .row { display:flex; gap:.6rem; flex-wrap:wrap; margin:.8rem 0; }
+  #status { border:1px solid var(--rule); padding:.5rem .7rem; margin:.8rem 0; }
+  #status.ok { border-color:var(--ok); } #status.bad { border-color:var(--bad); color:var(--bad); }
+  small { color:var(--muted); display:block; }
+</style>
+</head>
+<body>
+<main>
+  <h1>NestWatch</h1>
+  <p class="sub">This phone is a camera</p>
+  <hr>
+  <video id="v" playsinline muted autoplay></video>
+  <div id="status" role="status">Not started.</div>
+  <div class="row">
+    <button id="start">Start camera</button>
+    <button id="flip" disabled>Switch camera</button>
+    <button id="stop" disabled>Stop</button>
+  </div>
+  <small>The video goes only to the laptop on this Wi-Fi. Nothing is sent over the internet.</small>
+  <small>Put the phone where it sees the whole room, keep this page open, and keep the screen on.</small>
+</main>
+<script>
+(() => {
+  const TARGET_FPS = 10, WIDTH = 960, QUALITY = 0.7;
+  const code = new URLSearchParams(location.search).get('code') || '';
+  const $ = id => document.getElementById(id);
+  const video = $('v'), statusEl = $('status');
+  let stream = null, running = false, facing = 'environment', wake = null, token = 0;
+  let sent = 0, failures = 0, windowStart = performance.now(), windowCount = 0, fps = 0;
+
+  function say(text, kind) { statusEl.textContent = text; statusEl.className = kind || ''; }
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  async function openCamera() {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error(location.protocol === 'https:' || location.hostname === '127.0.0.1'
+        ? 'This browser cannot use the camera.'
+        : 'The camera needs https. Open the https:// address shown on the laptop.');
+    }
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    video.srcObject = stream;
+    await video.play();
+  }
+
+  async function keepAwake() {
+    try { if ('wakeLock' in navigator) wake = await navigator.wakeLock.request('screen'); } catch (e) { /* optional */ }
+  }
+
+  async function loop(mine) {
+    const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d');
+    while (running && mine === token) {
+      const t0 = performance.now();
+      if (video.videoWidth) {
+        const w = Math.min(WIDTH, video.videoWidth), h = Math.round(video.videoHeight * w / video.videoWidth);
+        canvas.width = w; canvas.height = h;
+        ctx.drawImage(video, 0, 0, w, h);
+        const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', QUALITY));
+        try {
+          // one frame at a time: if the Wi-Fi is slow we send fewer frames instead of queueing old ones
+          const res = await fetch('/phone-frame', { method: 'POST', headers: { 'X-Pair-Code': code, 'Content-Type': 'image/jpeg' }, body: blob });
+          if (res.status === 204) {
+            sent++; failures = 0; windowCount++;
+            const now = performance.now();
+            if (now - windowStart >= 1000) { fps = windowCount * 1000 / (now - windowStart); windowStart = now; windowCount = 0; }
+            say(`Sending to the laptop: ${fps.toFixed(1)} frames per second (${sent} sent)`, 'ok');
+          } else if (res.status === 403) {
+            say('The pairing code is wrong. Open the address printed on the laptop, including the part after "?code=".', 'bad');
+            running = false; return;
+          } else { failures++; say(`The laptop refused a frame (${res.status}).`, 'bad'); }
+        } catch (e) {
+          failures++;
+          say('Cannot reach the laptop. Is it on the same Wi-Fi and still running?', 'bad');
+          await sleep(1000);
+        }
+      }
+      await sleep(Math.max(0, 1000 / TARGET_FPS - (performance.now() - t0)));
+    }
+  }
+
+  async function start() {
+    $('start').disabled = true;
+    try {
+      say('Asking for the camera…');
+      await openCamera();
+      await keepAwake();
+      running = true; token++;
+      $('flip').disabled = false; $('stop').disabled = false;
+      loop(token);
+    } catch (e) {
+      $('start').disabled = false;
+      say(e.name === 'NotAllowedError' ? 'Camera permission was refused. Allow it in the browser settings and try again.' : (e.message || String(e)), 'bad');
+    }
+  }
+
+  function stop() {
+    running = false; token++;
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    if (wake) { wake.release().catch(() => {}); wake = null; }
+    video.srcObject = null;
+    $('start').disabled = false; $('flip').disabled = true; $('stop').disabled = true;
+    say('Stopped. The laptop will mark this camera offline.');
+  }
+
+  async function flip() {
+    facing = facing === 'environment' ? 'user' : 'environment';
+    try { await openCamera(); } catch (e) { say(e.message || String(e), 'bad'); }
+  }
+
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && running) keepAwake(); });
+  $('start').addEventListener('click', start);
+  $('stop').addEventListener('click', stop);
+  $('flip').addEventListener('click', flip);
+  if (!code) say('Open the full address printed on the laptop (it ends with ?code=…).', 'bad');
+})();
+</script>
+</body>
+</html>

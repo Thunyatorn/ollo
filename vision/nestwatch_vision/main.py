@@ -9,6 +9,7 @@ import itertools
 import logging
 import os
 import re
+import secrets
 import threading
 import time
 from datetime import datetime
@@ -22,6 +23,7 @@ from .calibration import demo_homography
 from .coordinator import AlertCoordinator
 from .local_api import Control, Latest, VisionContext, create_app
 from .capture import LiveSource, open_source
+from .phonecam import PhoneFeed, serve_phone_camera
 from .config import EvidenceConfig, PipelineConfig, PoseConfig
 from .evidence import EvidenceRecorder
 from .uploader import KeyframeUploader
@@ -92,7 +94,7 @@ class AlertPoller(threading.Thread):
 
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("source")
+    ap.add_argument("source", help="a webcam number, a video file, an http/rtsp camera address, or 'phone' (a phone's browser is the camera)")
     ap.add_argument("--uri", default="http://127.0.0.1:3000")
     ap.add_argument("--db", default="nestwatch-test")
     ap.add_argument("--token-file", default="../tools/.vision-token")
@@ -110,6 +112,9 @@ def main(argv=None) -> None:
     ap.add_argument("--quiet-alarm", action="store_true", help="log the local alarm instead of playing it (for testing)")
     ap.add_argument("--max-seconds", type=float, default=0)
     ap.add_argument("--worker-url", default=os.environ.get("WORKER_URL", ""), help="send blurred key frames of each event here (e.g. http://127.0.0.1:8787)")
+    ap.add_argument("--phone-port", type=int, default=8443, help="source 'phone': the https port the phone opens")
+    ap.add_argument("--phone-code", default="", help="source 'phone': pairing code in the page address (default: a new random one each run)")
+    ap.add_argument("--phone-http", action="store_true", help="source 'phone': plain http on 127.0.0.1, for testing on this laptop only")
     ap.add_argument("--nap-time", default="12:30-14:30", help="local time window of the 'nap_time' schedule that rules can use")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
@@ -122,11 +127,24 @@ def main(argv=None) -> None:
     cam = client.camera(a.camera)
     H = np.array(cam["homography"]).reshape(3, 3) if cam and len(cam["homography"]) == 9 else None
 
-    src = open_source(a.source, realtime=a.realtime)
+    phone_server = None
+    if a.source == "phone":
+        feed = PhoneFeed()
+        code = a.phone_code or secrets.token_urlsafe(6)
+        phone_server, urls = serve_phone_camera(feed, code, a.phone_port, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "certs"), a.phone_http)
+        for u in urls:
+            log.warning("PHONE CAMERA: open %s on the phone (same Wi-Fi; accept the certificate warning once)", u)
+        src = LiveSource("phone", open_fn=lambda: feed)
+    else:
+        src = open_source(a.source, realtime=a.realtime)
     if hasattr(src, "start"):
         src.start()
     frames = src.frames()
     first = next(frames, None)
+    while first is None and phone_server is not None:                         # the phone has not started sending yet
+        log.info("waiting for the phone to start sending frames...")
+        frames = src.frames()
+        first = next(frames, None)
     if isinstance(src, LiveSource):
         def camera_down():
             log.error("camera '%s' stopped sending frames; waiting for it to come back", a.camera)
@@ -256,6 +274,8 @@ def main(argv=None) -> None:
         pass
     finally:
         src.stop()
+        if phone_server:
+            phone_server.should_exit = True
         refresher.stop()
         poller.stop()
         if server:
