@@ -37,6 +37,7 @@ import {
 import type { LookoutState } from "./types";
 import { initialState, request } from "./api";
 import EventTrace from "./EventTrace";
+import CameraPicker from "./CameraPicker";
 import { demoIncidents } from "./demoIncidents";
 import FullscreenControls from "./FullscreenControls";
 import usePlaybackShortcuts from "./usePlaybackShortcuts";
@@ -1028,22 +1029,7 @@ export default function App() {
                   <div className="camera-toolbar">
                     <div>
                       <Video size={16} />
-                      <select
-                        className="camera-select"
-                        aria-label="Select camera"
-                        value={room}
-                        onChange={(e) => {
-                          setRoom(Number(e.target.value));
-                          setSelectedIncident(null);
-                        }}
-                      >
-                        {rooms.map((r, i) => (
-                          <option value={i} key={r.id}>
-                            {r.name}
-                          </option>
-                        ))}
-                      </select>
-                      <span className="camera-id">{rooms[room].id}</span>
+                      <CameraPicker rooms={rooms} selected={room} onSelect={index => { setRoom(index); setSelectedIncident(null); }} />
                     </div>
                     <div>
                       {room === 0 && sourceType !== "illustration" && (
@@ -1791,7 +1777,7 @@ export default function App() {
                       peaks={audioPeaks}
                       video={video}
                       selectedId={selectedIncident}
-                      onSelectIncident={marker => setSelectedIncident(marker.id)}
+
                       markers={timelineMarkers}
                       onSeek={(seconds, marker?: TimelineMarker) => {
                         setPlaying(false);

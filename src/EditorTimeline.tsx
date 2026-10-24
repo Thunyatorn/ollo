@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, type RefObject } from "react";
 import { AudioLines, Video } from "lucide-react";
 
 export type TimelineMarker = { id: string; time: number; endTime?: number; title: string; demo?: boolean };
@@ -16,21 +16,15 @@ function demoWaveform(seed: number) {
   });
 }
 
-export default function EditorTimeline({ camera, room, duration, position, playing, demo, peaks, video, markers, selectedId, onSelectIncident, onSeek }: {
+export default function EditorTimeline({ camera, room, duration, position, playing, demo, peaks, video, markers, selectedId, onSeek }: {
   camera: string; room: number; duration: number; position: number; playing: boolean; demo: boolean;
   peaks: number[] | null; video: RefObject<HTMLVideoElement | null>; markers: TimelineMarker[];
   selectedId?: string | null;
-  onSelectIncident?: (marker: TimelineMarker) => void;
   onSeek: (seconds: number, marker?: TimelineMarker) => void;
 }) {
   const playhead = useRef<HTMLDivElement>(null);
-  const [localSelection, setLocalSelection] = useState<string | null>(null);
-  const selection = selectedId === undefined ? localSelection : selectedId;
-  const selectMarker = (marker: TimelineMarker) => {
-    setLocalSelection(marker.id);
-    onSelectIncident?.(marker);
-  };
-  const clearAndSeek = (time: number) => { setLocalSelection(null); onSeek(time); };
+  const selection = selectedId;
+  const clearAndSeek = (time: number) => onSeek(time);
   const anchor = useRef({ position, at: performance.now() });
   const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 120;
   useEffect(() => { anchor.current = { position, at: performance.now() }; }, [position, playing, room]);
@@ -78,10 +72,10 @@ export default function EditorTimeline({ camera, room, duration, position, playi
       {markers.filter(m => m.time >= 0 && m.time <= safeDuration).map(marker => {
         const end = marker.endTime !== undefined && marker.endTime > marker.time ? Math.min(marker.endTime, safeDuration) : null;
         const selected = selection === marker.id;
-        return <div className="editor-incident" key={marker.id}>
-          {end !== null && <button className={`editor-incident-range ${selected ? "selected" : ""}`} style={{ left: `${marker.time / safeDuration * 100}%`, width: `${(end - marker.time) / safeDuration * 100}%` }} aria-label={`Select ${marker.title}, ${timecode(marker.time)} to ${timecode(end)}`} aria-pressed={selected} onClick={() => selectMarker(marker)} />}
-          <button className={`editor-incident-marker ${selected ? "selected" : ""}`} style={{ left: `${marker.time / safeDuration * 100}%` }} aria-label={`Select ${marker.title}, starts at ${timecode(marker.time)}`} title={`${timecode(marker.time)} · ${marker.title} · Start`} onClick={() => selectMarker(marker)}><span /></button>
-          {end !== null && <button className={`editor-incident-marker end-marker ${selected ? "selected" : ""}`} style={{ left: `${end / safeDuration * 100}%` }} aria-label={`Select ${marker.title}, resolved at ${timecode(end)}`} title={`${timecode(end)} · ${marker.title} · Resolved`} onClick={() => selectMarker(marker)}><span /></button>}
+        return <div className="editor-incident" key={marker.id} aria-hidden="true">
+          {end !== null && <div className={`editor-incident-range ${selected ? "selected" : ""}`} style={{ left: `${marker.time / safeDuration * 100}%`, width: `${(end - marker.time) / safeDuration * 100}%` }} />}
+          <div className={`editor-incident-marker ${selected ? "selected" : ""}`} style={{ left: `${marker.time / safeDuration * 100}%` }} title={`${timecode(marker.time)} · ${marker.title} · Start`}><span /></div>
+          {end !== null && <div className={`editor-incident-marker end-marker ${selected ? "selected" : ""}`} style={{ left: `${end / safeDuration * 100}%` }} title={`${timecode(end)} · ${marker.title} · Resolved`}><span /></div>}
         </div>;
       })}
     </div>

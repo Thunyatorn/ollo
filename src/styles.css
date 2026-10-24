@@ -3571,3 +3571,23 @@ input[type="range"], input[type="checkbox"] { accent-color: var(--primary); }
 .editor-incident-range { background: #f6ce6133; border-color: #f6ce6166; }
 .editor-incident-range:hover { background: #f6ce6155; }
 .editor-incident-range.selected { background: #f6ce61; border-color: #f6ce61; box-shadow: none; }
+
+/* Incident bands and flags are visual overlays; clicks reach the scrubber. */
+.editor-incident, .editor-incident-range, .editor-incident-marker { pointer-events: none; }
+
+/* Camera picker uses the same materials as the workspace. */
+.editor-workspace .camera-card { overflow: visible; }
+.editor-workspace .camera-toolbar { position: relative; z-index: 35; border-radius: 6px 6px 0 0; }
+.editor-workspace .camera-stage { border-radius: 0 0 6px 6px; }
+.camera-picker { position: relative; min-width: 0; }
+.camera-picker-trigger { display: flex; align-items: center; gap: 18px; padding: 6px 8px; border-radius: 4px; color: #e5edf4; font-size: 12px; text-align: left; }
+.camera-picker-trigger:hover, .camera-picker-trigger[aria-expanded="true"] { background: #9bd7ff0c; }
+.camera-picker-trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.camera-picker-trigger > svg { color: #8c9aa6; transition: transform .15s; }
+.camera-picker-trigger[aria-expanded="true"] > svg { transform: rotate(180deg); }
+.camera-picker-menu { position: absolute; z-index: 90; top: calc(100% + 9px); left: 0; width: 230px; max-width: calc(100vw - 60px); padding: 6px; background: #191e24; border: 1px solid #3b4853; border-radius: 7px; box-shadow: inset 0 1px 0 #cceaff15, 0 14px 35px #0008; }
+.camera-picker-label { display: block; padding: 8px 10px; color: #7e909f; font-size: 8px; letter-spacing: 1.3px; }
+.camera-picker-menu > button { width: 100%; display: flex; align-items: center; gap: 10px; padding: 11px 10px; border-radius: 4px; text-align: left; font-size: 11px; color: #b8c5cf; }
+.camera-picker-menu > button > span { flex: 1; }
+.camera-picker-menu > button[aria-checked="true"] { color: #c8e8fc; background: #9bd7ff10; }
+.camera-picker-menu > button:hover, .camera-picker-menu > button:focus-visible { background: #9bd7ff1c; color: #edf6fc; outline: none; }
