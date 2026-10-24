@@ -1,0 +1,11 @@
+# Optional local pose detector (YOLO26n-pose + ByteTrack), CPU-only PyTorch.
+# Install after requirements.txt. Ultralytics is AGPL-3.0: fine for this
+# prototype, but a commercial product needs a license or a different model.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.1+cpu
+torchvision==0.29.1+cpu
+ultralytics==8.4.185
+lap==0.5.13
+# Ultralytics depends on opencv-python; pin it to 4.x so it cannot replace the
+# headless build with OpenCV 5, which drops the HOG fallback.
+opencv-python==4.14.0.94
