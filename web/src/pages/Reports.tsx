@@ -2,10 +2,12 @@ import { Link, useParams } from 'react-router-dom';
 import { useTable } from 'spacetimedb/react';
 import { tables } from '../module_bindings';
 import ReportView from '../components/ReportView';
+import { useReportTitle } from '../lib';
 
 export default function Reports() {
   const { id } = useParams();
   const [reports] = useTable(tables.report);
+  const title = useReportTitle();
   const current = id ? reports.find(r => r.id === id) : undefined;
 
   return (
@@ -18,7 +20,7 @@ export default function Reports() {
           <div className="card">
             {[...reports].reverse().map(r => (
               <div key={r.id} className="row" style={{ padding: '.5rem 0', borderBottom: '1px solid var(--line)' }}>
-                <Link to={`/reports/${r.id}`} className="grow">{r.kind === 'daily' ? 'Daily summary' : `Incident ${r.alertId ?? ''}`}</Link>
+                <Link to={`/reports/${r.id}`} className="grow">{title(r)}</Link>
                 <span className="pill off">{r.status}</span>
               </div>
             ))}

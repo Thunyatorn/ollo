@@ -78,3 +78,17 @@ export function useUnhandledCount(): number {
   }, [n]);
   return n;
 }
+
+/** A readable title for a report: what happened, where and when (a daily summary shows its date). */
+export function useReportTitle() {
+  const [alerts] = useTable(tables.alert);
+  const [zones] = useTable(tables.zone);
+  return (r: { kind: string; alertId?: string | null; summary: string }): string => {
+    if (r.kind === 'daily') return r.summary.match(/^Daily summary (\d{4}-\d{2}-\d{2})/)?.[0] ?? 'Daily summary';
+    const a = alerts.find(x => x.id === r.alertId);
+    if (!a) return `Incident ${r.alertId ?? ''}`.trim();
+    const when = new Date(tsMs(a.createdAt)).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const where = zones.find(z => z.id === a.zoneId)?.name;
+    return `${eventLabel(a.eventType)}${where ? ` at ${where}` : ''}, ${when}`;
+  };
+}

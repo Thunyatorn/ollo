@@ -1,5 +1,7 @@
 import { Fragment } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
+import AlertBar from '../components/AlertBar';
+import AlertSound from '../components/AlertSound';
 import { clearToken, useMe, useUnhandledCount } from '../lib';
 
 const links = [
@@ -16,6 +18,7 @@ export default function DashboardLayout() {
   const unhandled = useUnhandledCount();
   return (
     <div className="doc">
+      <AlertBar />
       <header className="masthead">
         <h1>NestWatch</h1>
         <p className="byline">Room monitoring for small daycares</p>
@@ -31,6 +34,8 @@ export default function DashboardLayout() {
             </NavLink>
           </Fragment>
         ))}
+        <span aria-hidden="true"> | </span>
+        <AlertSound />
         <span aria-hidden="true"> | </span>
         <button className="linkbtn" onClick={() => { clearToken(); window.location.reload(); }}>Sign out</button>
       </nav>

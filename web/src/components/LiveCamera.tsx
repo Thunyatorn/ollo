@@ -26,7 +26,7 @@ export default function LiveCamera({ cameraId, name }: { cameraId: string; name:
              alt={`Live picture from ${name}, faces blurred`} onError={() => setFailed(true)} />
       )}
       <figcaption className="small muted">
-        Figure 2. Live picture from {name}. Faces are blurred and the pose skeleton is drawn on. It stays on the daycare network.
+        Figure 1. Live picture from {name}. Faces are blurred and the pose skeleton is drawn on. It stays on the daycare network.
       </figcaption>
     </figure>
   );

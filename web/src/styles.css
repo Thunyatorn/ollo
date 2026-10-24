@@ -92,6 +92,15 @@ caption { text-align: left; padding: .3rem .1rem; }
 .plan .lbl { transition: x .15s linear, y .15s linear; }
 .plan .ring { animation: ring 1.2s ease-in-out infinite; }
 @keyframes ring { 50% { opacity: .3; } }
+/* alert strip across the top of every page */
+.alertbar { position: sticky; top: 0; z-index: 20; display: flex; gap: 1rem; align-items: center; justify-content: space-between; flex-wrap: wrap;
+  padding: .55rem .8rem; margin: 0 0 .6rem; color: #fff; background: var(--red); border-bottom: 3px solid #000; }
+.alertbar.medium { background: var(--orange); } .alertbar.low { background: var(--blue); }
+.alertbar a { color: #fff; } .alertbar .alertbar-text { flex: 1 1 22rem; }
+.alertbar .alertbar-buttons { display: flex; gap: .5rem; }
+.alertbar .btn { background: #fff; color: #000; border: 2px solid #000; }
+.alertbar .btn.secondary { background: #e8e8e8; }
+
 /* live camera figure */
 img.live { width: 100%; display: block; background: #000; border: 1px solid var(--rule); }
 .live-off { border: 1px solid var(--rule); padding: 1.2rem; text-align: center; background: #f6f6f6; }

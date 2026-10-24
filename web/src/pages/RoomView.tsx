@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import { useTable } from 'spacetimedb/react';
-import { tables } from '../module_bindings';
+import { useReducer, useTable } from 'spacetimedb/react';
+import { reducers, tables } from '../module_bindings';
 import FloorPlan from '../components/FloorPlan';
 import AlertCard from '../components/AlertCard';
 import LiveCamera from '../components/LiveCamera';
+import SystemStatus from '../components/SystemStatus';
 import { OPEN_STATES, eventLabel, formatClock, tsMs, useMe } from '../lib';
 import { VISION_URL } from '../config';
 
@@ -21,6 +22,9 @@ export default function RoomView() {
   const [selected, setSelected] = useState<string | null>(null);
   const [tagWho, setTagWho] = useState('');
   const [tagMsg, setTagMsg] = useState('');
+  const [showAll, setShowAll] = useState(false);
+  const [busyAll, setBusyAll] = useState(false);
+  const closeAlert = useReducer(reducers.closeAlert);
 
   const room = rooms[0];
   const open = useMemo(
@@ -44,6 +48,16 @@ export default function RoomView() {
   const offline = roomCameras.filter(c => c.status !== 'online');
   const zoneName = (id: string) => zones.find(z => z.id === id)?.name;
   const labelOf = (trackId: string) => positions.find(p => p.trackId === trackId)?.label;
+
+  const handled = open.filter(a => a.status === 'owned');
+  const SHOWN = 4;
+  const listed = showAll ? open : open.slice(0, SHOWN);
+
+  async function resolveHandled() {
+    setBusyAll(true);
+    try { for (const a of handled) await closeAlert({ alertId: a.id, reason: 'resolved by caregiver' }); }
+    finally { setBusyAll(false); }
+  }
 
   async function tagAdult() {
     setTagMsg('');
@@ -77,11 +91,12 @@ export default function RoomView() {
 
       <div className="room-layout">
         <div className="stack">
+          {roomCameras.map(c => <LiveCamera key={c.id} cameraId={c.id} name={c.name} />)}
           <FloorPlan
             room={room} zones={zones.filter(z => z.roomId === room.id)} positions={roomPositions}
             blindSpots={blind} alertTracks={alertTracks} showPath onTrackClick={setSelected}
           />
-          <p className="small muted">Figure 1. Circles are children, squares are adults, hatched areas are restricted zones, grey hatching is not covered by a camera. Click a mark to tag an adult.</p>
+          <p className="small muted">Figure 2. Circles are children, squares are adults, hatched areas are restricted zones, grey hatching is not covered by a camera. Click a mark to tag an adult.</p>
           {selected && (
             <div className="card row">
               <span>Track {labelOf(selected) ?? selected}: this is</span>
@@ -94,13 +109,12 @@ export default function RoomView() {
             </div>
           )}
           {tagMsg && <div className="banner" role="status">{tagMsg}</div>}
-          {roomCameras.map(c => <LiveCamera key={c.id} cameraId={c.id} name={c.name} />)}
         </div>
 
         <div className="stack">
           {open.length === 0 ? (
             <div className="card"><h2>Open alerts:</h2><p>None. All clear.</p></div>
-          ) : open.map(a => (
+          ) : listed.map(a => (
             <div key={a.id}>
               <AlertCard alert={a} me={me} caregivers={caregivers} via="dashboard" zoneName={zoneName(a.zoneId)} childLabel={labelOf(a.trackId)} />
               {a.clipRef && <p className="small"><a href={`${VISION_URL}/clips/${a.clipRef}`} target="_blank" rel="noreferrer">View blurred clip</a> <span className="muted">(only on the daycare network)</span></p>}
@@ -113,6 +127,18 @@ export default function RoomView() {
               <div key={c.id} className="row small"><span className="grow">{c.name}</span><span className={`pill ${c.status === 'online' ? 'ok' : 'medium'}`}>{c.status.replace('_', ' ')}</span></div>
             ))}
           </div>
+
+          {open.length > SHOWN && (
+            <p className="small">
+              Showing {listed.length} of {open.length} open alerts, most urgent first.{' '}
+              <button className="linkbtn" onClick={() => setShowAll(v => !v)}>{showAll ? 'Show fewer' : `Show all ${open.length}`}</button>
+            </p>
+          )}
+          {handled.length > 1 && (
+            <p className="small"><button className="btn secondary" onClick={resolveHandled} disabled={busyAll}>{busyAll ? 'Resolving…' : `Resolve all ${handled.length} that are being handled`}</button></p>
+          )}
+
+          <SystemStatus />
 
           <div className="card">
             <h2>Today:</h2>

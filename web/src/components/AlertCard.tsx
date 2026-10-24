@@ -79,7 +79,7 @@ export default function AlertCard({ alert, me, caregivers, via, zoneName, childL
           )}
         </div>
         {!isOwned && <button className="btn big" onClick={actions.takeIt} disabled={actions.busy}>I'm on it</button>}
-        {iOwnIt && <button className="btn big secondary" onClick={() => actions.resolve('resolved by caregiver')} disabled={actions.busy}>All clear — close alert</button>}
+        {isOwned && <button className="btn big secondary" onClick={() => actions.resolve('resolved by caregiver')} disabled={actions.busy}>{iOwnIt ? 'All clear — close alert' : 'Mark resolved'}</button>}
         {!isOwned && <button className="btn secondary" onClick={actions.falseAlarm} disabled={actions.busy}>False alarm</button>}
         {actions.error && <div className="banner" role="alert">{actions.error}</div>}
       </div>
@@ -113,7 +113,7 @@ export default function AlertCard({ alert, me, caregivers, via, zoneName, childL
           <td colSpan={2}>
             <div className="actions">
               {!isOwned && <button className="btn" onClick={actions.takeIt} disabled={actions.busy}>I'm on it</button>}
-              {iOwnIt && <button className="btn secondary" onClick={() => actions.resolve('resolved by caregiver')} disabled={actions.busy}>Close alert</button>}
+              {isOwned && <button className="btn secondary" onClick={() => actions.resolve('resolved by caregiver')} disabled={actions.busy}>{iOwnIt ? 'Close alert' : 'Mark resolved'}</button>}
               {!isOwned && <button className="btn secondary" onClick={actions.falseAlarm} disabled={actions.busy}>False alarm</button>}
             </div>
             {actions.error && <div className="banner" role="alert">{actions.error}</div>}

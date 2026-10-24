@@ -67,6 +67,22 @@ cd vision
 ```
 The label format is in the script's header (same as the team's evaluator, plus optional calibration, zones and adult tags per clip).
 
+## Run it (one command)
+
+```bash
+spacetime start                     # once, in its own terminal (the database)
+scripts/nestwatch.sh start          # worker + vision + website; the demo room by default, calls simulated
+scripts/nestwatch.sh start --source webcam      # this computer's camera
+scripts/nestwatch.sh start --source phone       # a phone's browser as the camera (prints the address to open on the phone)
+scripts/nestwatch.sh status         # what is running
+scripts/nestwatch.sh stop
+```
+
+Open http://127.0.0.1:5173 and sign in (Maria, code `maria`). Real phone calls need `--calls real` and a typed `yes`, and are refused with the
+looping demo. The website shows the live camera picture (faces blurred, pose skeleton drawn on), a banner for the most urgent alert on every
+page, a **System** card (camera, worker, calls real or simulated, Claude, buzzers), readable report titles, and an optional alert sound
+(switch it on in the menu bar; browsers need one click first).
+
 ## Demo room (no camera needed)
 
 `vision/scripts/make_demo_room.py` builds a 37-second video from the GMDCSA24 dataset (one person moving about, then a
