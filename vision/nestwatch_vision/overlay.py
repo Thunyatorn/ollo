@@ -23,10 +23,13 @@ def draw(img: np.ndarray, people, scale: float, banner: str = "", conf: float = 
         for i in range(17):
             if k[i, 2] >= 0.3:
                 cv2.circle(out, (int(k[i, 0] * scale), int(k[i, 1] * scale)), 3, WHITE, -1, cv2.LINE_AA)
-    if banner:
+    if banner:                                                        # a small red pill, centred at the top
         h, w = out.shape[:2]
-        cv2.rectangle(out, (0, 0), (w, 34), RED, -1)
-        cv2.putText(out, banner, (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.7, WHITE, 2, cv2.LINE_AA)
+        scale = max(0.45, min(0.7, w / 1100))
+        (tw, th), _ = cv2.getTextSize(banner, cv2.FONT_HERSHEY_SIMPLEX, scale, 1)
+        x1, y1 = max(4, (w - tw) // 2 - 12), 10
+        cv2.rectangle(out, (x1, y1), (x1 + tw + 24, y1 + th + 14), RED, -1)
+        cv2.putText(out, banner, (x1 + 12, y1 + th + 6), cv2.FONT_HERSHEY_SIMPLEX, scale, WHITE, 1, cv2.LINE_AA)
     return out
 
 

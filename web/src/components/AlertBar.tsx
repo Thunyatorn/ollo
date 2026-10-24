@@ -39,7 +39,8 @@ function Bar({ alert, me, more, zoneName, childLabel }: { alert: Alert; me: Care
         {actions.error && <> <em>{actions.error}</em></>}
       </div>
       <div className="alertbar-buttons">
-        <button className="btn" onClick={actions.takeIt} disabled={actions.busy}>I'm on it</button>
+        <button className="btn amber" onClick={actions.takeIt} disabled={actions.busy}>I'm on it</button>
+        {(alert.status === 'notified' || alert.status === 'escalated') && <button className="btn secondary" onClick={actions.cannotRespond} disabled={actions.busy} title="Skip the wait: the next person is told now">I can't respond</button>}
         <button className="btn secondary" onClick={actions.falseAlarm} disabled={actions.busy}>False alarm</button>
       </div>
     </div>

@@ -3,6 +3,7 @@
   POST /rules/interpret   dashboard, phone app (signed-in caregiver)   plain-language rule -> inactive zone draft
   POST /keyframes         vision service (vision identity)             two or three blurred JPEGs for an event
   GET  /audio/{token}     Twilio                                       the Cartesia audio of one call
+  POST /webhooks/voice/ack  Cartesia voice agent (bearer secret)            {token, decision}: the caregiver said "I'm on it" or "I can't"
   POST /twilio/voice      Twilio (signed)                              the call instructions: play the audio, wait for one key press
   POST /twilio/gather     Twilio (signed)                              the key the backup pressed; 1 acknowledges
   POST /twilio/status     Twilio (signed)                              ringing, completed, no answer, ...
@@ -14,9 +15,11 @@ import contextlib
 import logging
 import re
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+import hmac
+
+from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import PlainTextResponse, Response
 
 from . import ai
 from .calls import TwilioCalls, twilio_outcome, valid_twilio_signature
@@ -108,9 +111,10 @@ def create_app(worker, checker, keyframes, settings, start_loop: bool = True) ->
 
     # ---------- Twilio ----------
     def twilio() -> TwilioCalls:
-        if not isinstance(calls, TwilioCalls):
+        provider = calls if isinstance(calls, TwilioCalls) else getattr(calls, "fallback", None)     # the keypad call, alone or as the agent's fallback
+        if not isinstance(provider, TwilioCalls):
             raise HTTPException(404, "real calls are not enabled")
-        return calls
+        return provider
 
     async def signed_form(request: Request, job: str = "", token: str = "") -> dict:
         """Twilio's webhook form, checked. A signed request must carry a valid signature. Trial accounts' requests arrive
@@ -137,6 +141,19 @@ def create_app(worker, checker, keyframes, settings, start_loop: bool = True) ->
         if wav is None:
             raise HTTPException(404, "no such audio (it expires after 15 minutes)")
         return Response(wav, media_type="audio/wav", headers={"Cache-Control": "no-store"})
+
+    @app.post("/webhooks/voice/ack")
+    async def voice_ack(request: Request, body: dict = Body(...)):
+        """The Cartesia voice agent's webhook tool `acknowledge_alert`: {token, decision: acknowledge | decline}."""
+        secret = settings.voice_webhook_secret
+        if not secret or not hmac.compare_digest(request.headers.get("authorization", ""), f"Bearer {secret}"):
+            raise HTTPException(401, "bad secret")
+        if not hasattr(calls, "take_token"):
+            raise HTTPException(404, "the voice agent is not enabled")
+        decision = str(body.get("decision", ""))
+        if decision not in ("acknowledge", "decline"):
+            raise HTTPException(422, "decision must be acknowledge or decline")
+        return PlainTextResponse(await worker.on_voice_decision(str(body.get("token", "")), decision))
 
     @app.post("/twilio/voice")
     async def voice(request: Request, job: str, t: str):

@@ -16,7 +16,8 @@ interface Props {
   showPath?: boolean;
 }
 
-const RED = '#b00000', ORANGE = '#a65a00', BLUE = '#1f3f8f', GREY = '#555';
+const RED = '#e07a6b', ORANGE = '#d8b17a', BLUE = '#8fb3d9', GREY = '#6b7177';
+const AXIS = '#8c939d', GRID = '#262a2e', BG = '#121417';
 const zoneColor = (s: string) => (s === 'high' ? RED : s === 'medium' ? ORANGE : BLUE);
 
 // A floor plan drawn like a technical figure: meter grid with ticks, hatched zones,
@@ -67,20 +68,20 @@ export default function FloorPlan({ room, zones = [], positions = [], blindSpots
       {/* 1 m grid with axis labels */}
       {Array.from({ length: Math.floor(w) + 1 }, (_, i) => (
         <g key={`x${i}`}>
-          {i > 0 && i < w && <line x1={i} y1={0} x2={i} y2={h} stroke="#c9c9c9" strokeWidth={1} vectorEffect="non-scaling-stroke" />}
-          <line x1={i} y1={h} x2={i} y2={h + tick} stroke="#000" strokeWidth={1} vectorEffect="non-scaling-stroke" />
-          <text x={i} y={h + tick + unit * 0.035} textAnchor="middle" fontSize={unit * 0.032} fill="#000">{i}</text>
+          {i > 0 && i < w && <line x1={i} y1={0} x2={i} y2={h} stroke={GRID} strokeWidth={1} vectorEffect="non-scaling-stroke" />}
+          <line x1={i} y1={h} x2={i} y2={h + tick} stroke={AXIS} strokeWidth={1} vectorEffect="non-scaling-stroke" />
+          <text x={i} y={h + tick + unit * 0.035} textAnchor="middle" fontSize={unit * 0.032} fill={AXIS}>{i}</text>
         </g>
       ))}
       {Array.from({ length: Math.floor(h) + 1 }, (_, i) => (
         <g key={`y${i}`}>
-          {i > 0 && i < h && <line x1={0} y1={i} x2={w} y2={i} stroke="#c9c9c9" strokeWidth={1} vectorEffect="non-scaling-stroke" />}
-          <line x1={-tick} y1={i} x2={0} y2={i} stroke="#000" strokeWidth={1} vectorEffect="non-scaling-stroke" />
-          <text x={-tick - unit * 0.01} y={i + unit * 0.011} textAnchor="end" fontSize={unit * 0.032} fill="#000">{i}</text>
+          {i > 0 && i < h && <line x1={0} y1={i} x2={w} y2={i} stroke={GRID} strokeWidth={1} vectorEffect="non-scaling-stroke" />}
+          <line x1={-tick} y1={i} x2={0} y2={i} stroke={AXIS} strokeWidth={1} vectorEffect="non-scaling-stroke" />
+          <text x={-tick - unit * 0.01} y={i + unit * 0.011} textAnchor="end" fontSize={unit * 0.032} fill={AXIS}>{i}</text>
         </g>
       ))}
-      <rect x={0} y={0} width={w} height={h} fill="none" stroke="#000" strokeWidth={2} vectorEffect="non-scaling-stroke" />
-      <text x={w} y={h + tick + unit * 0.075} textAnchor="end" fontSize={unit * 0.03} fontStyle="italic" fill="#000">meters</text>
+      <rect x={0} y={0} width={w} height={h} fill="none" stroke={AXIS} strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+      <text x={w} y={h + tick + unit * 0.075} textAnchor="end" fontSize={unit * 0.03} fontStyle="italic" fill={AXIS}>meters</text>
 
       {blindSpots.map((b, i) => (
         <polygon key={`b${i}`} points={poly(b)} fill="url(#hatch-blind)" stroke={GREY} strokeDasharray="5 3" strokeWidth={1} vectorEffect="non-scaling-stroke" />
@@ -98,7 +99,7 @@ export default function FloorPlan({ room, zones = [], positions = [], blindSpots
           />
           {z.polygon[0] && (
             <text x={z.polygon[0].x + unit * 0.012} y={z.polygon[0].y + unit * 0.05} fontSize={unit * 0.04} fontWeight={700} fill={zoneColor(z.severity)}
-              stroke="#fff" strokeWidth={unit * 0.012} paintOrder="stroke">
+              stroke={BG} strokeWidth={unit * 0.012} paintOrder="stroke">
               {z.name}{z.status === 'draft' ? ' (draft)' : ''}
             </text>
           )}
@@ -107,8 +108,8 @@ export default function FloorPlan({ room, zones = [], positions = [], blindSpots
 
       {draft && draft.length > 0 && (
         <g>
-          <polyline points={poly(draft)} fill="none" stroke="#000" strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />
-          {draft.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={dotR * 0.45} fill="#000" />)}
+          <polyline points={poly(draft)} fill="none" stroke="#d6ded3" strokeWidth={2} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />
+          {draft.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={dotR * 0.45} fill="#d6ded3" />)}
         </g>
       )}
 
@@ -122,15 +123,15 @@ export default function FloorPlan({ room, zones = [], positions = [], blindSpots
             )}
             {isAlert && <circle className="ring" cx={p.x} cy={p.y} r={dotR * 1.8} fill="none" stroke={RED} strokeWidth={3} vectorEffect="non-scaling-stroke" />}
             {isChild ? (
-              <circle className="dot" cx={p.x} cy={p.y} r={dotR} fill={isAlert ? RED : '#fff'} stroke="#000" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+              <circle className="dot" cx={p.x} cy={p.y} r={dotR} fill={isAlert ? RED : '#d6ded3'} stroke={BG} strokeWidth={2} vectorEffect="non-scaling-stroke" />
             ) : (
-              <rect className="dot" x={p.x - dotR} y={p.y - dotR} width={dotR * 2} height={dotR * 2} fill="#000" />
+              <rect className="dot" x={p.x - dotR} y={p.y - dotR} width={dotR * 2} height={dotR * 2} fill="#bbc9aa" />
             )}
             <text className="lbl" x={p.x} y={p.y + dotR * 0.4} textAnchor="middle" fontSize={dotR * 1.15} fontWeight={700}
-              fill={isChild && !isAlert ? '#000' : '#fff'} pointerEvents="none">{p.label}</text>
+              fill={isAlert ? '#fff' : isChild ? BG : '#20291c'} pointerEvents="none">{p.label}</text>
             {isAlert && (
               <g pointerEvents="none">
-                <rect x={p.x + dotR * 0.7} y={p.y - dotR * 1.9} width={dotR * 1.1} height={dotR * 1.1} fill="#000" />
+                <rect x={p.x + dotR * 0.7} y={p.y - dotR * 1.9} width={dotR * 1.1} height={dotR * 1.1} fill={BG} stroke={RED} strokeWidth={1} vectorEffect="non-scaling-stroke" />
                 <text x={p.x + dotR * 1.25} y={p.y - dotR * 1.02} textAnchor="middle" fontSize={dotR * 1.0} fontWeight={700} fill="#fff">!</text>
               </g>
             )}

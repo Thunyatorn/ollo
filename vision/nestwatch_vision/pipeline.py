@@ -10,6 +10,7 @@ import numpy as np
 from .calibration import jacobian, to_floor
 from .config import PipelineConfig, TrackerConfig
 from .cusum import CusumBank
+from .detectors.behaviour import BehaviourDetector
 from .detectors.fall import FallConfig, FallDetector
 from .detectors.not_visible import NotVisibleDetector
 from .detectors.unsupervised import UnsupervisedConfig, evidence as supervision_evidence
@@ -50,6 +51,7 @@ class Pipeline:
         self.rng = rng or np.random.default_rng()
         self._foot_sigma = dict(self.cfg.foot_sigma_m)
         self.fall = FallDetector(FallConfig())
+        self.behaviour = BehaviourDetector()
         self.sup_cfg = UnsupervisedConfig()
         self.sup_bank = CusumBank(self.sup_cfg.k, self.sup_cfg.h, self.sup_cfg.cooldown_s)
         self.not_visible = NotVisibleDetector()
@@ -67,6 +69,27 @@ class Pipeline:
                 self.adult_tagged = True
                 return True
         return False
+
+    def _owner(self, box, tracks, need_track: bool = False):
+        """The id of the tracked child standing where this picture box is, 0 if nobody is tracked there (unless need_track),
+        or None when it is a tagged adult: a caregiver kneeling or lying down is not a child in danger."""
+        x1, _, x2, y2 = (float(v) for v in box)
+        xy = to_floor(self.H, ((x1 + x2) / 2, y2))
+        near = min(tracks, key=lambda tr: float(np.hypot(*(tr.pos - xy))), default=None)
+        if near is not None and float(np.hypot(*(near.pos - xy))) > 1.5:
+            near = None
+        if near is not None and near.tag is not None:
+            return None
+        if near is None:
+            return None if need_track else 0
+        return near.id
+
+    def _nap_time(self, now: datetime) -> bool:
+        window = self.zones.named_schedules.get("nap_time")
+        if not window:
+            return False
+        start, end, m = window[0], window[1], now.hour * 60 + now.minute
+        return start <= m < end if start <= end else (m >= start or m < end)
 
     # ---- one frame --------------------------------------------------------------------------------
     def step(self, people: list[Person], t: float, now: datetime, everyone: list[Person] | None = None) -> StepResult:
@@ -133,13 +156,14 @@ class Pipeline:
 
         # falls (MATH 8.1): detected in the picture, attached to the nearest tracked person on the floor
         for f in self.fall.update(everyone if everyone is not None else people, t):
-            x1, _, x2, y2 = (float(v) for v in f.box)
-            xy = to_floor(self.H, ((x1 + x2) / 2, y2))
-            near = min(tracks, key=lambda tr: float(np.hypot(*(tr.pos - xy))), default=None)
-            if near is not None and float(np.hypot(*(near.pos - xy))) > 1.5:
-                near = None
-            if near is not None and near.tag is not None:
-                continue                                        # a tagged caregiver kneeling or lying down is not a child's fall
-            tid = near.id if near is not None else 0
-            res.events.append(Event(f"t{tid}", "fall", "", "high", None, f"evt_{int(t * 1000)}_t{tid}", t))
+            tid = self._owner(f.box, tracks)
+            if tid is not None:
+                res.events.append(Event(f"t{tid}", "fall", "", "high", None, f"evt_{int(t * 1000)}_t{tid}", t))
+
+        # hands at the throat, rhythmic shaking, stillness (MATH 8.6): pose rules from the team's reference build
+        nap = self._nap_time(now)
+        for b in self.behaviour.update(people, t, nap=nap):
+            tid = self._owner(b.box, tracks, need_track=(b.kind == "stillness"))   # a still "person" nobody tracks may be a coat
+            if tid is not None:
+                res.events.append(Event(f"t{tid}", b.kind, "", b.severity, None, f"evt_{int(t * 1000)}_t{tid}", t))
         return res

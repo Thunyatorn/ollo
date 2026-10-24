@@ -693,6 +693,33 @@ export const acknowledgeAlert = spacetimedb.reducer(
   }
 );
 
+// A caregiver says they cannot respond. They do not take the alert; escalation moves on at once instead of waiting out its
+// timer (the primary declines: the backup is called now; the backup declines: all staff and the alarm now).
+// The worker may record a decline spoken to the voice agent (via phone_call or voice).
+export const declineAlert = spacetimedb.reducer(
+  { alertId: t.string(), caregiverId: t.string(), via: t.string() },
+  (ctx, { alertId, caregiverId, via }) => {
+    const who = requireRole(ctx, 'worker', 'caregiver');
+    if (!['dashboard', 'phone_app', 'phone_call', 'voice'].includes(via)) throw new SenderError('bad via');
+    if (who.role === 'worker' && via !== 'phone_call' && via !== 'voice') {
+      throw new SenderError('worker can only decline via phone_call or voice');
+    }
+    if (who.role === 'caregiver') {
+      if (via !== 'dashboard' && via !== 'phone_app') throw new SenderError('caregivers decline via dashboard or phone_app');
+      if (who.caregiverId !== caregiverId) throw new SenderError('you can only decline as yourself');
+    }
+    const a = ctx.db.alert.id.find(alertId);
+    if (!a) throw new SenderError('alert not found');
+    const cg = ctx.db.caregiver.id.find(caregiverId);
+    if (!cg) throw new SenderError('caregiver not found');
+    if (a.ownerId) return;                                            // someone already has it
+    if (a.status !== 'notified' && a.status !== 'escalated') return;  // nothing left to skip
+    logEvent(ctx, alertId, 'declined', `${cg.name} cannot respond (via ${via}); escalating now`);
+    cancelTimers(ctx, alertId);
+    runEscalation(ctx, alertId, a.escalationLevel);
+  }
+);
+
 export const closeAlert = spacetimedb.reducer(
   { alertId: t.string(), reason: t.string() },
   (ctx, { alertId, reason }) => {

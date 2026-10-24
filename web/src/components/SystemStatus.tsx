@@ -1,18 +1,6 @@
-import { useEffect, useState } from 'react';
-import { VISION_URL, WORKER_URL } from '../config';
+import { useServices } from '../services';
 
 type Level = 'ok' | 'warn' | 'bad';
-interface Vision { camera_online?: boolean; fps?: number; calibrated?: boolean; spacetime_online?: boolean | null; buzzers?: Record<string, unknown>; alarm?: { active: boolean; reasons: string[] } }
-interface Worker { claude?: string; calls?: string }
-
-async function probe<T>(url: string): Promise<T | null> {
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), 2500);
-  try {
-    const r = await fetch(url, { signal: ctl.signal, cache: 'no-store' });
-    return r.ok ? await r.json() as T : null;
-  } catch { return null; } finally { clearTimeout(timer); }
-}
 
 function Row({ label, level, children }: { label: string; level: Level; children: React.ReactNode }) {
   const pill = level === 'ok' ? 'ok' : level === 'warn' ? 'medium' : 'high';
@@ -21,25 +9,13 @@ function Row({ label, level, children }: { label: string; level: Level; children
 
 // What is running, in plain words, so a failure is noticed here instead of during an alert.
 export default function SystemStatus() {
-  const [vision, setVision] = useState<Vision | null | undefined>(undefined);
-  const [worker, setWorker] = useState<Worker | null | undefined>(undefined);
+  const { vision, worker } = useServices();
 
-  useEffect(() => {
-    let live = true;
-    const tick = async () => {
-      const [v, w] = await Promise.all([probe<Vision>(`${VISION_URL}/health`), probe<Worker>(`${WORKER_URL}/health`)]);
-      if (live) { setVision(v); setWorker(w); }
-    };
-    void tick();
-    const id = setInterval(tick, 5000);
-    return () => { live = false; clearInterval(id); };
-  }, []);
-
-  if (vision === undefined || worker === undefined) return <div className="card"><h2>System:</h2><p className="muted small">Checking…</p></div>;
+  if (vision === undefined || worker === undefined) return <div className="card"><h2>System</h2><p className="muted small">Checking…</p></div>;
   const buzzers = Object.keys(vision?.buzzers ?? {});
   return (
     <div className="card">
-      <h2>System:</h2>
+      <h2>System</h2>
       <table><tbody>
         {vision === null ? (
           <Row label="Camera computer" level="bad">Not reachable. Start the vision service on the camera computer (and be on the same network).</Row>
@@ -59,7 +35,7 @@ export default function SystemStatus() {
             {worker.calls === 'twilio' ? 'Real phone calls are on.' : 'Simulated: no real call is made.'}
           </Row>
           <Row label="Claude" level={worker.claude === 'on' ? 'ok' : 'warn'}>
-            {worker.claude === 'on' ? 'On: second opinions, rule drafts and written reports.' : 'Off: plain reports and keyword rules.'}
+            {worker.claude === 'on' ? `On: second opinions, rule drafts and written reports.${worker.claude_cost_usd != null ? ` About $${worker.claude_cost_usd.toFixed(3)} spent in ${worker.claude_calls ?? 0} calls since the worker started.` : ''}` : 'Off: plain reports and keyword rules.'}
           </Row>
         </>)}
       </tbody></table>

@@ -1,46 +1,48 @@
-import { Fragment } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
+import { Eye, FileText, LogOut, Settings2, Shield, Smartphone, Video } from 'lucide-react';
 import AlertBar from '../components/AlertBar';
 import AlertSound from '../components/AlertSound';
 import { clearToken, useMe, useUnhandledCount } from '../lib';
 
+// The reference build's top bar (brand, page buttons, connection state), around our pages.
 const links = [
-  { to: '/', label: 'Room', end: true },
-  { to: '/rules', label: 'Rules' },
-  { to: '/reports', label: 'Reports' },
-  { to: '/caregivers', label: 'Caregivers' },
-  { to: '/setup', label: 'Setup' },
-  { to: '/m/alert', label: 'Phone view' },
+  { to: '/', label: 'Monitor', icon: Video, end: true },
+  { to: '/rules', label: 'Rules', icon: Shield },
+  { to: '/reports', label: 'Reports', icon: FileText },
+  { to: '/settings', label: 'Settings', icon: Settings2 },
+  { to: '/m/alert', label: 'Phone view', icon: Smartphone },
 ];
 
 export default function DashboardLayout() {
   const { me } = useMe();
   const unhandled = useUnhandledCount();
   return (
-    <div className="doc">
-      <AlertBar />
-      <header className="masthead">
-        <h1>NestWatch</h1>
-        <p className="byline">Room monitoring for small daycares</p>
-        <p className="byline2">Signed in as {me?.name} ({me?.role})</p>
-      </header>
-      <nav className="topnav" aria-label="Main">
-        {links.map((l, i) => (
-          <Fragment key={l.to}>
-            {i > 0 && <span aria-hidden="true"> | </span>}
-            <NavLink to={l.to} end={l.end} className={({ isActive }) => (isActive ? 'active' : '')}>
-              {l.label}
-              {l.to === '/' && unhandled > 0 && <strong className="unhandled" aria-label={`${unhandled} alerts need attention`}> ({unhandled})</strong>}
-            </NavLink>
-          </Fragment>
-        ))}
-        <span aria-hidden="true"> | </span>
-        <AlertSound />
-        <span aria-hidden="true"> | </span>
-        <button className="linkbtn" onClick={() => { clearToken(); window.location.reload(); }}>Sign out</button>
-      </nav>
-      <main className="main"><Outlet /></main>
-      <footer className="foot">NestWatch. Video stays in the daycare; only positions and events are shared.</footer>
+    <div className="app-shell">
+      <main className="main">
+        <header className="topbar">
+          <NavLink className="brand compact-brand" to="/" aria-label="NestWatch monitor">
+            <Eye size={23} strokeWidth={1.6} />
+            NestWatch
+          </NavLink>
+          <nav className="topbar-nav" aria-label="Main">
+            {links.map(l => (
+              <NavLink key={l.to} to={l.to} end={l.end} className={({ isActive }) => `button ${isActive ? 'active' : ''}`}>
+                <l.icon size={14} />
+                {l.label}
+                {l.to === '/' && unhandled > 0 && <span className="unhandled" aria-label={`${unhandled} alerts need attention`}>{unhandled}</span>}
+              </NavLink>
+            ))}
+          </nav>
+          <div className="topbar-right">
+            <AlertSound />
+            <span className="connection"><span className="status-dot" />System connected</span>
+            <span className="who">{me?.name} ({me?.role})</span>
+            <button className="linkbtn" onClick={() => { clearToken(); window.location.reload(); }}><LogOut size={13} />Sign out</button>
+          </div>
+        </header>
+        <AlertBar />
+        <Outlet />
+      </main>
     </div>
   );
 }

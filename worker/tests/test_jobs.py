@@ -215,7 +215,7 @@ class RecordingCalls:
     def __init__(self):
         self.placed, self.hung_up = [], []
 
-    async def place(self, job_id, phone, text, on_result):
+    async def place(self, job_id, phone, text, on_result, info=None):
         self.placed.append(job_id)
         return f"CA_{job_id}"
 

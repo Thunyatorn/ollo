@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { useTable } from 'spacetimedb/react';
 import { tables } from '../module_bindings';
 import AlertCard from '../components/AlertCard';
-import { OPEN_STATES, tsMs, useMe } from '../lib';
+import { OPEN_STATES, tsMs, useMe, eventLabel } from '../lib';
 import { VISION_URL } from '../config';
 
 const RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
@@ -54,7 +54,7 @@ export default function PhoneAlert() {
         <div className="card">
           <h3>{open.length - 1} more</h3>
           {open.slice(1).map(a => (
-            <div key={a.id} className="row small"><span className={`pill ${a.severity}`}>{a.severity}</span><span className="grow">Child {labelOf(a.trackId) ?? '?'} — {zoneName(a.zoneId) ?? a.eventType}</span><span className="muted">{a.status === 'owned' ? 'handled' : 'open'}</span></div>
+            <div key={a.id} className="row small"><span className={`pill ${a.severity}`}>{a.severity}</span><span className="grow">Child {labelOf(a.trackId) ?? '?'} — {zoneName(a.zoneId) ?? eventLabel(a.eventType)}</span><span className="muted">{a.status === 'owned' ? 'handled' : 'open'}</span></div>
           ))}
         </div>
       )}

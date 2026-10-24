@@ -41,6 +41,7 @@ import ClaimCaregiverReducer from "./claim_caregiver_reducer";
 import CloseAlertReducer from "./close_alert_reducer";
 import ConfirmZoneReducer from "./confirm_zone_reducer";
 import CreateZoneReducer from "./create_zone_reducer";
+import DeclineAlertReducer from "./decline_alert_reducer";
 import EscalateDueReducer from "./escalate_due_reducer";
 import EscalateNowReducer from "./escalate_now_reducer";
 import GrantRoleReducer from "./grant_role_reducer";
@@ -254,6 +255,7 @@ const reducersSchema = __reducers(
   __reducerSchema("close_alert", CloseAlertReducer),
   __reducerSchema("confirm_zone", ConfirmZoneReducer),
   __reducerSchema("create_zone", CreateZoneReducer),
+  __reducerSchema("decline_alert", DeclineAlertReducer),
   __reducerSchema("escalate_due", EscalateDueReducer),
   __reducerSchema("escalate_now", EscalateNowReducer),
   __reducerSchema("grant_role", GrantRoleReducer),

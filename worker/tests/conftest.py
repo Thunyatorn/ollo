@@ -15,7 +15,7 @@ def unopt(v):
 
 class FakeSpacetime:
     def __init__(self):
-        self.t = {k: [] for k in ("alert", "call_job", "incident_event", "zone", "named_area", "worker_contacts", "report")}
+        self.t = {k: [] for k in ("alert", "call_job", "incident_event", "zone", "named_area", "worker_contacts", "report", "room", "caregiver")}
         self.roles: dict[str, dict] = {}            # token -> my_role row
         self.calls: list[tuple[str, list]] = []
         self.token = "worker-token"
@@ -70,6 +70,12 @@ class FakeSpacetime:
             for j in self.t["call_job"]:
                 if j["alertId"] == args[0] and j["status"] in ("queued", "ringing"):
                     j["status"] = "cancelled"
+        elif reducer == "decline_alert":
+            al = a(args[0])
+            if al["ownerId"] or al["status"] not in ("notified", "escalated"):
+                return
+            self.log(args[0], "declined", f"{args[1]} cannot respond (via {args[2]}); escalating now")
+            al["status"] = "escalated" if al["status"] == "notified" else "unanswered"
         elif reducer == "set_urgency":
             al = a(args[0])
             if al["severity"] == "high":
@@ -117,6 +123,8 @@ def stdb():
     s.t["named_area"] += [{"id": "na_gate", "roomId": "main", "name": "Kitchen gate"},
                           {"id": "na_shelf", "roomId": "main", "name": "Book shelf"}]
     s.t["worker_contacts"].append({"caregiverId": "c_bob", "phone": "+15550000002", "joinCode": "bob"})
+    s.t["room"].append({"id": "main", "name": "Playroom"})
+    s.t["caregiver"] += [{"id": "c_maria", "name": "Maria", "role": "primary"}, {"id": "c_bob", "name": "Bob", "role": "backup"}]
     s.roles = {"maria-token": {"role": "caregiver", "caregiverId": "c_maria"}, "vision-token": {"role": "vision", "caregiverId": None}}
     return s
 

@@ -23,6 +23,8 @@ ESCALATIONS = ("buzzer_then_call", "buzzer_only")
 CLOCK = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 DIAGNOSIS = re.compile(r"\b(choked|choking on|had a seizure|seized|was injured|is injured|got hurt|unconscious|"
                        r"not breathing|stopped breathing|concussion|broke|fractured?|diagnos\w*)\b", re.I)
+# USD per million input / output tokens (Claude API list prices, as listed on 2026-09-25)
+PRICES = {"claude-haiku-4-5": (1.00, 5.00), "claude-sonnet-5-5": (2.00, 10.00), "claude-opus-5-5": (4.00, 20.00), "claude-fable-5-1": (10.00, 50.00)}
 FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
 NO_EFFORT_MODELS = ("claude-haiku-4-5",)                # effort is rejected there
 
@@ -242,6 +244,7 @@ class Claude:
     def __init__(self, client, fast_model: str, strong_model: str):
         self.client, self.fast_model, self.strong_model = client, fast_model, strong_model
         self.calls, self.failures = 0, 0
+        self.cost_usd, self.unpriced = 0.0, 0
 
     async def ask(self, model: str, system: str, content: list, schema: dict, *, effort: str = "low",
                   max_tokens: int = 4000, timeout: float = 60.0) -> dict | None:
@@ -255,6 +258,7 @@ class Claude:
             response = await client.beta.messages.create(**params, betas=["server-side-fallback-2026-07-01"], fallbacks="default")
         else:
             response = await client.messages.create(**params)
+        self._count(getattr(response, "model", None) or model, getattr(response, "usage", None))
         if response.stop_reason in ("refusal", "max_tokens"):
             self.failures += 1
             log.warning("claude stopped: %s", response.stop_reason)
@@ -265,6 +269,14 @@ class Claude:
         except json.JSONDecodeError:
             self.failures += 1
             return None
+
+    def _count(self, model: str, usage) -> None:
+        """Add what this call cost (input and output tokens at list price). A model without a known price is only counted."""
+        price = next((p for name, p in PRICES.items() if str(model).startswith(name)), None)
+        if usage is None or price is None:
+            self.unpriced += 1
+            return
+        self.cost_usd += (getattr(usage, "input_tokens", 0) * price[0] + getattr(usage, "output_tokens", 0) * price[1]) / 1_000_000
 
     async def second_opinion(self, alert: dict, zone_name: str | None, events: list[dict], frames: list[bytes],
                              timeout: float) -> dict | None:

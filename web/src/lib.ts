@@ -47,7 +47,8 @@ export function eventLabel(eventType: string): string {
     climbing: 'Climbing',
     stillness: 'Not moving for a while',
     unsupervised: 'No adult nearby',
-    possible_distress: 'Possible distress',
+    possible_distress: 'Possible distress: both hands at the throat',
+    rhythmic_movement: 'Repeated shaking movement',
     child_not_visible: 'Child out of sight',
     head_count_mismatch: 'Head count mismatch',
   };

@@ -40,15 +40,23 @@ class NotRetryable(Exception):
     """The call may already have been placed (for example the request to the provider timed out): do not dial again."""
 
 
-def call_message(alert: dict, zone_name: str | None, now: float) -> str:
-    """'A child entered the stairs area 20 seconds ago. Press 1 if you're on it.' No names, no track numbers."""
+def call_phrase(alert: dict, zone_name: str | None, now: float) -> str:
+    """'A child entered the Stairs area 20 seconds ago'. No names, no track numbers."""
     place = f"the {zone_name} area" if zone_name else "the room"
     ago = max(0, int(now - alert["createdAt"]))
     what = {
         "zone_entry": f"A child entered {place}", "zone_entry_predicted": f"A child was heading into {place}",
         "fall": f"A possible fall was seen near {place}", "unsupervised": "A child has been without an adult nearby",
+        "possible_distress": "A child may be in distress: both hands were held at the throat",
+        "rhythmic_movement": "A child was seen with repeated shaking movement",
+        "stillness": "A child has hardly moved for a while",
     }.get(alert["eventType"], f"A child is {EVENT_WORDS.get(alert['eventType'], 'flagged near')} {place}")
-    return f"This is NestWatch. {what} {ago} seconds ago and nobody has answered yet. Press 1 if you're on it."
+    return f"{what} {ago} seconds ago"
+
+
+def call_message(alert: dict, zone_name: str | None, now: float) -> str:
+    """'This is NestWatch. A child entered the Stairs area 20 seconds ago and nobody has answered yet. Press 1 if you're on it.'"""
+    return f"This is NestWatch. {call_phrase(alert, zone_name, now)} and nobody has answered yet. Press 1 if you're on it."
 
 
 def twilio_signature(auth_token: str, url: str, params: dict) -> str:
@@ -73,7 +81,7 @@ class SimulatedCalls:
         self._tasks: dict[str, asyncio.Task] = {}
         self.placed: list[tuple[str, str, str]] = []   # (job_id, phone_last4, text), for tests and /health
 
-    async def place(self, job_id: str, phone: str, text: str, on_result: OnResult) -> str:
+    async def place(self, job_id: str, phone: str, text: str, on_result: OnResult, info: dict | None = None) -> str:
         if self.outcome == "error":
             raise RuntimeError("simulated provider error")
         self.placed.append((job_id, phone[-4:], text))
@@ -142,7 +150,7 @@ class TwilioCalls:
         return (f'<?xml version="1.0" encoding="UTF-8"?><Response><Gather numDigits="1" timeout="10" action={gather} '
                 f'method="POST"><Play>{play}</Play><Play>{play}</Play></Gather><Hangup/></Response>')
 
-    async def place(self, job_id: str, phone: str, text: str, on_result: OnResult) -> str:
+    async def place(self, job_id: str, phone: str, text: str, on_result: OnResult, info: dict | None = None) -> str:
         if not E164.match(phone):
             raise ValueError("the backup's phone number is not in +E.164 form")
         wav = await self.speech(text)
@@ -216,6 +224,102 @@ class TwilioCalls:
             await self.http.post(url, data={"Status": "completed"}, auth=self._auth)
         except httpx.HTTPError as e:
             log.warning("could not hang up %s: %s", call_id, e)
+
+
+AGENT_CALLS_URL = "https://api.cartesia.ai/agents/calls"
+
+
+class AgentCalls:
+    """A Cartesia voice agent calls the backup and understands "I'm on it" (no key press). The agent's webhook tool
+    `acknowledge_alert` posts to /webhooks/voice/ack with the one-time token we passed it as a dynamic variable.
+    Only the token's SHA-256 is kept, each token works once, and it expires after 15 minutes."""
+    name = "cartesia_agent"
+
+    def __init__(self, s, http: httpx.AsyncClient | None = None, give_up_s: float = 100.0):
+        self.s, self.give_up_s = s, give_up_s
+        self.http = http or httpx.AsyncClient(timeout=15.0)
+        self.tokens: dict[str, dict] = {}                     # sha256(token) -> {job, alert, caregiver, exp, used}
+        self._timers: dict[str, asyncio.Task] = {}
+
+    async def place(self, job_id: str, phone: str, text: str, on_result: OnResult, info: dict | None = None) -> str:
+        if not E164.match(phone):
+            raise ValueError("the backup's phone number is not in +E.164 form")
+        info = info or {}
+        token = secrets.token_urlsafe(24)
+        variables = {"room": info.get("room", "the room"), "alert": info.get("alert", "an alert"),
+                     "caregiver": info.get("caregiver", "caregiver"), "ack_token": token}
+        body = {"agent_id": self.s.cartesia_agent_id, "from_number_id": self.s.cartesia_from_number_id, "ringing_timeout_seconds": 30,
+                "outbound_calls": [{"to_number": phone, "dynamic_variables": variables}]}
+        try:
+            r = await self.http.post(AGENT_CALLS_URL, json=body, headers={"X-API-Key": self.s.cartesia_key, "Cartesia-Version": self.s.cartesia_version})
+        except httpx.TimeoutException as e:                   # the call may exist already; dialling again could ring twice
+            raise NotRetryable(f"cartesia timed out: {e}") from e
+        if r.status_code >= 400:
+            raise RuntimeError(f"cartesia refused the agent call: {_why(r)}")
+        entry = (r.json().get("calls") or [{}])[0]
+        if not entry.get("agent_call_id"):
+            raise RuntimeError(f"cartesia created no call: {str(entry.get('error', 'no reason given'))[:200]}")
+        self.tokens[hashlib.sha256(token.encode()).hexdigest()] = {"job": job_id, "alert": info.get("alert_id", ""), "caregiver": info.get("caregiver_id", ""),
+                                                                   "exp": time.time() + 900, "used": False}
+        self._timers[job_id] = asyncio.create_task(self._expire(job_id, on_result))
+        return entry["agent_call_id"]
+
+    async def _expire(self, job_id: str, on_result: OnResult) -> None:
+        """Nobody spoke to the agent within give_up_s: the call counts as unanswered."""
+        try:
+            await asyncio.sleep(self.give_up_s)
+            await on_result(job_id, "no_answer")
+        except asyncio.CancelledError:
+            raise
+        finally:
+            self._timers.pop(job_id, None)
+
+    def take_token(self, token: str) -> dict | None:
+        """The call a token belongs to, once. Unknown, used or expired tokens give None."""
+        rec = self.tokens.get(hashlib.sha256((token or "").encode()).hexdigest())
+        if rec is None or rec["used"] or rec["exp"] < time.time():
+            return None
+        rec["used"] = True
+        timer = self._timers.pop(rec["job"], None)
+        if timer:
+            timer.cancel()
+        return rec
+
+    async def hang_up(self, job_id: str, call_id: str) -> None:
+        timer = self._timers.pop(job_id, None)
+        if timer:
+            timer.cancel()                                    # Cartesia has no hang-up we rely on; the agent ends its own call
+
+
+class FallbackCalls:
+    """The voice agent first; if it cannot be placed, the same step falls back to the keypad call (Twilio)."""
+
+    def __init__(self, primary, fallback):
+        self.primary, self.fallback = primary, fallback
+        self.name = f"{primary.name}+{fallback.name}"
+        self._used: dict[str, object] = {}
+
+    async def place(self, job_id: str, phone: str, text: str, on_result: OnResult, info: dict | None = None) -> str:
+        try:
+            call_id = await self.primary.place(job_id, phone, text, on_result, info)
+            self._used[job_id] = self.primary
+            return call_id
+        except NotRetryable:
+            raise
+        except Exception as e:
+            log.warning("%s: the voice agent call failed (%s); using the keypad call instead", job_id, e)
+            call_id = await self.fallback.place(job_id, phone, text, on_result, info)
+            self._used[job_id] = self.fallback
+            return call_id
+
+    async def hang_up(self, job_id: str, call_id: str) -> None:
+        await (self._used.pop(job_id, self.primary)).hang_up(job_id, call_id)
+
+    def take_token(self, token: str):
+        return self.primary.take_token(token)
+
+    def __getattr__(self, name):                              # audio_for, twiml, ... of the keypad call, for the Twilio routes
+        return getattr(self.fallback, name)
 
 
 def twilio_outcome(call_status: str) -> str | None:

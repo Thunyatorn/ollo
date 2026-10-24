@@ -8,6 +8,7 @@ import Setup from './pages/Setup';
 import Rules from './pages/Rules';
 import Reports from './pages/Reports';
 import Caregivers from './pages/Caregivers';
+import Settings from './pages/Settings';
 import PhoneLayout from './pages/PhoneLayout';
 import PhoneAlert from './pages/PhoneAlert';
 import PhoneRule from './pages/PhoneRule';
@@ -19,7 +20,7 @@ export default function App() {
 
   if (!conn.isActive) {
     return (
-      <div className="phone">
+      <div className="phone" style={{ paddingTop: '18vh' }}>
         <div className="card">
           <h2>{conn.connectionError ? 'Cannot reach NestWatch' : 'Connecting…'}</h2>
           <p className="muted">
@@ -38,11 +39,15 @@ export default function App() {
     <Routes>
       <Route element={<DashboardLayout />}>
         <Route index element={<RoomView />} />
-        <Route path="setup" element={<Setup />} />
+        <Route path="settings" element={<Settings />}>
+          <Route index element={<Setup />} />
+          <Route path="caregivers" element={<Caregivers />} />
+        </Route>
+        <Route path="setup" element={<Navigate to="/settings" replace />} />
         <Route path="rules" element={<Rules />} />
         <Route path="reports" element={<Reports />} />
         <Route path="reports/:id" element={<Reports />} />
-        <Route path="caregivers" element={<Caregivers />} />
+        <Route path="caregivers" element={<Navigate to="/settings/caregivers" replace />} />
       </Route>
       <Route path="m" element={<PhoneLayout />}>
         <Route index element={<Navigate to="alert" replace />} />

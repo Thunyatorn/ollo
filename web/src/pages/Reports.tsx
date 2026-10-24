@@ -11,8 +11,12 @@ export default function Reports() {
   const current = id ? reports.find(r => r.id === id) : undefined;
 
   return (
-    <div className="stack">
-      <h1>Reports</h1>
+    <section className="secondary-page stack">
+      <div>
+        <span className="eyebrow">RECORDS</span>
+        <h1>Reports</h1>
+        <p className="page-lead">A report is written for every closed alert; each line cites a logged event.</p>
+      </div>
       {reports.length === 0 ? (
         <div className="card"><p className="muted">No reports yet. A report is written after an alert is closed.</p></div>
       ) : (
@@ -28,6 +32,6 @@ export default function Reports() {
           {current ? <ReportView report={current} /> : <div className="card muted">Choose a report.</div>}
         </div>
       )}
-    </div>
+    </section>
   );
 }
