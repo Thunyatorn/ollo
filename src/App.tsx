@@ -15,6 +15,7 @@ import {
   Grid2X2,
   History,
   LockKeyhole,
+  LogOut,
   Map as MapIcon,
   Maximize2,
   Pause,
@@ -26,7 +27,6 @@ import {
   ScanLine,
   Settings2,
   Shield,
-  SlidersHorizontal,
   Upload,
   Video,
   Volume2,
@@ -38,6 +38,8 @@ import {
 import type { LookoutState } from "./types";
 import { initialState, request } from "./api";
 import EventTrace from "./EventTrace";
+import EditorTimeline, { type TimelineMarker } from "./EditorTimeline";
+import MonitoringControls, { dateKey, type CameraLayout } from "./MonitoringControls";
 // COCO keypoint pairs drawn as limbs (UI-6).
 const LIMBS = [
   [0, 1], [0, 2], [1, 3], [2, 4], [5, 6], [5, 7], [7, 9], [6, 8],
@@ -118,22 +120,39 @@ const rooms = [
   {
     name: "Toddler room",
     id: "CAM 01",
-    status: "Active",
-    type: "Toddler room · East wing",
+    image: "/playroom-cctv.png",
+    alt: "AI-generated CCTV-style playroom scene with toddlers playing",
+    tracks: demoTracks,
   },
   {
-    name: "Nursery",
+    name: "Gas station",
     id: "CAM 02",
-    status: "Not connected",
-    type: "Infant room · East wing",
-  },
-  {
-    name: "Playroom",
-    id: "CAM 03",
-    status: "Not connected",
-    type: "Shared space · West wing",
+    image: "/gas-station-cctv.png",
+    alt: "AI-generated CCTV-style gas station aisle with one adult browsing snacks",
+    tracks: [{ x: 44.5, y: 19, w: 12, h: 48 }],
   },
 ];
+function DemoScene({ room, zones }: { room: number; zones: boolean }) {
+  const camera = rooms[room];
+  return (
+    <div className="demo-scene">
+      <img src={camera.image} alt={camera.alt} />
+      {zones && (
+        <div className="demo-tracks" aria-label="Illustrative tracking boxes">
+          {camera.tracks.map((t, i) => (
+            <div
+              className="demo-person"
+              key={i}
+              style={{ left: `${t.x}%`, top: `${t.y}%`, width: `${t.w}%`, height: `${t.h}%` }}
+            >
+              <span>PERSON {String(i + 1).padStart(2, "0")}<i>DEMO</i></span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 const fmt = (value: string | number) =>
   new Date(typeof value === "number" ? value * 1000 : value).toLocaleTimeString(
     "en-US",
@@ -146,6 +165,11 @@ const stamp = (n: number) =>
     .toString()
     .padStart(2, "0")}`;
 export default function App() {
+  const [signedOut, setSignedOut] = useState(() => sessionStorage.getItem("nestwatch-workspace-closed") === "true");
+  const audioFile = useRef<File | null>(null);
+  const [audioPeaks, setAudioPeaks] = useState<number[] | null>(null);
+  const [cameraLayout, setCameraLayout] = useState<CameraLayout>("single");
+  const [reviewDate, setReviewDate] = useState<string | null>(null);
   const [state, setState] = useState<LookoutState>(initialState),
     [connected, setConnected] = useState(false),
     [page, setPage] = useState("monitor"),
@@ -204,6 +228,8 @@ export default function App() {
     stateRef = useRef(state),
     settingsHydrated = useRef(false);
   stateRef.current = state;
+  const incidentDate = (at: string | number) => dateKey(new Date(typeof at === "number" ? at * 1000 : at));
+  const datedState = reviewDate ? { ...state, incidents: state.incidents.filter(i => incidentDate(i.opened_at) === reviewDate) } : state;
   const active = state.incidents.find(
     (i) => i.status === "open" || i.status === "acknowledged",
   );
@@ -377,6 +403,7 @@ export default function App() {
     }
   }, [page, connected]);
   useEffect(() => {
+    if (signedOut) return;
     let live = true;
     const refresh = async () => {
       try {
@@ -411,12 +438,18 @@ export default function App() {
       clearInterval(id);
       stream.current?.getTracks().forEach((t) => t.stop());
     };
-  }, []);
+  }, [signedOut]);
   useEffect(() => {
     if (!playing || source) return;
-    const id = setInterval(() => setPosition((p) => (p + 1) % 120), 1000);
+    let previous = performance.now();
+    const id = setInterval(() => {
+      const now = performance.now();
+      const elapsed = (now - previous) / 1000;
+      previous = now;
+      setPosition(p => (p + elapsed) % (Number.isFinite(duration) && duration > 0 ? duration : 120));
+    }, 100);
     return () => clearInterval(id);
-  }, [playing, source]);
+  }, [playing, source, duration]);
   useEffect(() => {
     if (!source && sourceType !== "webcam") return;
     // One reused canvas; skip a tick while the previous upload is in flight so slow
@@ -663,10 +696,30 @@ export default function App() {
       return;
     }
     setBusy(true);
+    audioFile.current = f;
+    setAudioPeaks(null);
     setAnalysisReady(false);
     stream.current?.getTracks().forEach((t) => t.stop());
     setSource(URL.createObjectURL(f));
     setSourceType("recording");
+    // Decode only the uploaded source, never microphone or unrelated audio.
+    void (async () => {
+      const context = new AudioContext();
+      try {
+        const audio = await context.decodeAudioData(await f.arrayBuffer());
+        const channels = Array.from({ length: audio.numberOfChannels }, (_, i) => audio.getChannelData(i));
+        const peaks = Array.from({ length: 480 }, (_, i) => {
+          const start = Math.floor(i * audio.length / 480);
+          const end = Math.floor((i + 1) * audio.length / 480);
+          let peak = 0;
+          for (const channel of channels)
+            for (let j = start; j < end; j++) peak = Math.max(peak, Math.abs(channel[j]));
+          return peak;
+        });
+        if (audioFile.current === f) setAudioPeaks(peaks);
+      } catch { /* Source has no decodable audio track. */ }
+      finally { await context.close(); }
+    })();
     setPosition(0);
     setRoom(0);
     setSourceOpen(false);
@@ -687,6 +740,8 @@ export default function App() {
     setBusy(false);
   }
   async function webcam() {
+    audioFile.current = null;
+    setAudioPeaks(null);
     try {
       const media = await navigator.mediaDevices.getUserMedia({
         video: true,
@@ -719,6 +774,8 @@ export default function App() {
     }
   }
   async function serverCamera() {
+    audioFile.current = null;
+    setAudioPeaks(null);
     if (!connected) {
       setCameraMessage("Start the NestWatch server to use a server camera.");
       return;
@@ -766,6 +823,8 @@ export default function App() {
     }
   }
   async function reset() {
+    audioFile.current = null;
+    setAudioPeaks(null);
     stream.current?.getTracks().forEach((t) => t.stop());
     if (source.startsWith("blob:")) URL.revokeObjectURL(source);
     setSource("");
@@ -789,6 +848,7 @@ export default function App() {
   const mobileId = window.location.pathname.startsWith("/respond/")
     ? window.location.pathname.split("/").pop()
     : null;
+  if (signedOut) return <div className="workspace-closed"><Eye size={34} /><h1>Workspace closed</h1><button className="button primary" onClick={() => { sessionStorage.removeItem("nestwatch-workspace-closed"); setSignedOut(false); setPage("monitor"); }}>Open local workspace</button></div>;
   if (mobileId) {
     const incident = state.incidents.find((i) => i.id === mobileId);
     return (
@@ -896,7 +956,7 @@ export default function App() {
     );
   }
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${page === "monitor" ? "editor-workspace" : ""}`}>
       <main className="main">
         <header className="topbar">
           <button
@@ -907,35 +967,26 @@ export default function App() {
             <Eye size={23} strokeWidth={1.6} />
             NestWatch
           </button>
-          <div className="topbar-nav">
-            {page !== "monitor" && (
-              <button className="button" onClick={() => setPage("monitor")}>
-                <Video size={14} />
-                Monitor
-              </button>
-            )}
-            <button
-              className={`button ${page === "settings" ? "active" : ""}`}
-              onClick={() =>
-                setPage(page === "settings" ? "monitor" : "settings")
-              }
-            >
-              <Settings2 size={14} />
-              Settings
-            </button>
-          </div>
-          <div className="topbar-right">
-            <span className={`connection ${connected ? "" : "local"}`}>
-              <span className="status-dot" />
-              {connected ? "System connected" : "Local demo"}
-            </span>
-
+          <div className="account-area">
+            {page !== "monitor" && <button className="button" onClick={() => setPage("monitor")}><Video size={14} />Monitor</button>}
+            <details className="account-menu" onKeyDown={e => { if (e.key === "Escape") { e.currentTarget.removeAttribute("open"); e.currentTarget.querySelector("summary")?.focus(); } }} onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) e.currentTarget.removeAttribute("open"); }}>
+              <summary aria-label="Account menu"><img src="/profile-avatar.svg" alt="Account profile" /><ChevronDown size={12} /></summary>
+              <div className="account-dropdown">
+                <div className="account-identity"><img src="/profile-avatar.svg" alt="" /><div><strong>{state.caregivers[0]?.name || "Local operator"}</strong><span>Local workspace</span></div></div>
+                <div className="account-connection"><span className={`status-dot ${connected ? "" : "red"}`} />{connected ? "System connected" : "Local demo"}</div>
+                <button onClick={e => { setPage("settings"); e.currentTarget.closest("details")?.removeAttribute("open"); }}><Settings2 size={15} />Settings</button>
+                <button onClick={e => { setPage("history"); e.currentTarget.closest("details")?.removeAttribute("open"); }}><History size={15} />Incident history</button>
+                <button className="account-signout" onClick={() => { sessionStorage.setItem("nestwatch-workspace-closed", "true"); setPlaying(false); video.current?.pause(); setSource(""); setSourceType("illustration"); setAnalysisReady(false); setSignedOut(true); }}><LogOut size={15} />Sign out</button>
+              </div>
+            </details>
           </div>
         </header>
         {page === "monitor" ? (
           <>
+
             <section className="monitor-grid">
               <div className="monitor-column">
+                <div className={`camera-layout layout-${cameraLayout}`}>
                 <div className="camera-card">
                   <div className="camera-toolbar">
                     <div>
@@ -951,24 +1002,23 @@ export default function App() {
                       >
                         {rooms.map((r, i) => (
                           <option value={i} key={r.id}>
-                            {i === 0 ? state.camera.room_label : r.name}
-                            {i ? " · Not connected" : ""}
+                            {r.name}
                           </option>
                         ))}
                       </select>
                       <span className="camera-id">{rooms[room].id}</span>
                     </div>
                     <div>
-                      <span className="record-label">
-                        <span />{" "}
-                        {sourceType === "webcam"
-                          ? "LIVE WEBCAM"
-                          : sourceType === "server"
-                            ? "SERVER CAMERA"
-                            : sourceType === "recording"
-                            ? "RECORDED VIDEO"
-                            : "ILLUSTRATIVE DEMO"}
-                      </span>
+                      {room === 0 && sourceType !== "illustration" && (
+                        <span className="record-label">
+                          <span />{" "}
+                          {sourceType === "webcam"
+                            ? "LIVE WEBCAM"
+                            : sourceType === "server"
+                              ? "SERVER CAMERA"
+                              : "RECORDED VIDEO"}
+                        </span>
+                      )}
                       <button
                         className={`icon-button ${zones ? "enabled" : ""}`}
                         title="Toggle zone overlay"
@@ -1088,47 +1138,17 @@ export default function App() {
                             </div>
                           )
                         ) : (
-                          <div className="demo-scene">
-                            <img
-                              src="/playroom-cctv.png"
-                              alt="AI-generated CCTV-style playroom scene with toddlers playing"
-                            />
-                            {zones && (
-                              <div
-                                className="demo-tracks"
-                                aria-label="Illustrative tracking boxes"
-                              >
-                                {demoTracks.map((t, i) => (
-                                  <div
-                                    className="demo-person"
-                                    key={i}
-                                    style={{
-                                      left: `${t.x}%`,
-                                      top: `${t.y}%`,
-                                      width: `${t.w}%`,
-                                      height: `${t.h}%`,
-                                    }}
-                                  >
-                                    <span>
-                                      PERSON {String(i + 1).padStart(2, "0")}
-                                      <i>DEMO</i>
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+                          <DemoScene room={room} zones={zones} />
                         )}
                         <div className="camera-shade" />
                         <div className="on-video-top">
-                          <div className="source-badge">
-                            <span
-                              className={`status-dot ${state.camera.health === "offline" ? "red" : ""}`}
-                            />
-                            {state.camera.health === "offline"
-                              ? "Analysis unavailable"
-                              : sourceType === "illustration"
-                                ? "Demo workspace"
+                          {sourceType !== "illustration" && (
+                            <div className="source-badge">
+                              <span
+                                className={`status-dot ${state.camera.health === "offline" ? "red" : ""}`}
+                              />
+                              {state.camera.health === "offline"
+                                ? "Analysis unavailable"
                                 : !analysisReady
                                   ? "Local playback"
                                   : state.camera.health === "degraded"
@@ -1136,17 +1156,16 @@ export default function App() {
                                     : state.session.status === "active"
                                       ? "Monitoring active"
                                       : "Analysis paused"}
-                            <span className="island-divider" />
-                            <span>
-                              {sourceType === "illustration"
-                                ? "Fixture mode"
-                                : sourceType === "server"
+                              <span className="island-divider" />
+                              <span>
+                                {sourceType === "server"
                                   ? "Server capture"
                                   : connected
                                     ? "Frame stream"
                                     : "Local playback"}
-                            </span>
-                          </div>
+                              </span>
+                            </div>
+                          )}
                           <div className="camera-clock">
                             <span>CAM 01 · EAST WING</span>
                             <strong>{stamp(position)}</strong>
@@ -1637,61 +1656,87 @@ export default function App() {
                             )}
                           </div>
                         )}
-                        <div className="video-footer">
-                          <span>
-                            <LockKeyhole size={11} />{" "}
-                            {sourceType === "illustration"
-                              ? "AI-generated still · illustrative tracks"
-                              : "Controlled demo source · no identity recognition"}
-                          </span>
-                          {sourceType !== "illustration" &&
+                        {sourceType !== "illustration" &&
                           state.session.status === "active" &&
-                          state.camera.analysis_fps !== undefined ? (
-                            <span
-                              className={
-                                state.camera.analysis_fps < 8 ||
-                                state.camera.health === "offline"
-                                  ? "analysis-rate low"
-                                  : "analysis-rate"
-                              }
-                              title={
-                                state.camera.analysis_fps < 8
-                                  ? `Rhythmic-movement checks need at least 8 analyzed frames per second.${sourceType === "server" ? "" : " Keep this tab visible."}`
-                                  : sourceType === "server"
-                                    ? "Frames analyzed per second by the server, whether or not this tab is visible"
-                                    : "Frames analyzed per second on this computer"
-                              }
-                            >
-                              {state.camera.detector === "pose"
-                                ? "Pose"
-                                : "Person"}{" "}
-                              ·{" "}
-                              {state.camera.health === "offline"
-                                ? "no frames"
-                                : `${state.camera.analysis_fps.toFixed(1)} fps`}
-                            </span>
-                          ) : (
-                            <span>NESTWATCH / 01</span>
+                          state.camera.analysis_fps !== undefined && (
+                            <div className="video-footer">
+                              <span
+                                className={
+                                  state.camera.analysis_fps < 8 ||
+                                  state.camera.health === "offline"
+                                    ? "analysis-rate low"
+                                    : "analysis-rate"
+                                }
+                                title={
+                                  state.camera.analysis_fps < 8
+                                    ? `Rhythmic-movement checks need at least 8 analyzed frames per second.${sourceType === "server" ? "" : " Keep this tab visible."}`
+                                    : sourceType === "server"
+                                      ? "Frames analyzed per second by the server, whether or not this tab is visible"
+                                      : "Frames analyzed per second on this computer"
+                                }
+                              >
+                                {state.camera.detector === "pose"
+                                  ? "Pose"
+                                  : "Person"}{" "}
+                                ·{" "}
+                                {state.camera.health === "offline"
+                                  ? "no frames"
+                                  : `${state.camera.analysis_fps.toFixed(1)} fps`}
+                              </span>
+                            </div>
                           )}
-                        </div>
                       </>
                     ) : (
-                      <div className="empty-camera">
-                        <Video size={32} />
-                        <h3>{rooms[room].name}</h3>
-                        <p>No video source connected</p>
-                        <button
-                          className="button"
-                          onClick={() => {
-                            setPage("settings");
-                          }}
-                        >
-                          <Plus size={15} />
-                          Camera settings
-                        </button>
-                      </div>
+                      <>
+                        <DemoScene room={room} zones={zones} />
+                        <div className="camera-shade" />
+                      </>
                     )}
                   </div>
+
+                </div>
+                {cameraLayout !== "single" && <div className="additional-cameras">
+                  {rooms.map((camera, index) => index !== room && <button className="camera-preview-card" key={camera.id} onClick={() => { setRoom(index); setSelectedIncident(null); }} aria-label={`Focus ${camera.name}`}>
+                    <div className="preview-card-header"><span><Video size={14} />{camera.name}</span><small>{camera.id}</small></div>
+                    <div className="preview-card-scene">{index === 0 && sourceType !== "illustration" ? serverFrame && sourceType === "server" ? <img src={serverFrame} alt="Current server camera preview" /> : <div className="preview-source-placeholder"><Video size={24} /><span>{sourceType === "webcam" ? "Webcam connected" : "Video source connected"}</span><small>Select to view and control</small></div> : <DemoScene room={index} zones={zones} />}</div>
+                    <div className="preview-card-footer"><span>{index === 0 && sourceType !== "illustration" ? "Connected source" : "Illustrative demo · not a live feed"}</span><Maximize2 size={12} /></div>
+                  </button>)}
+                  <button className="add-camera-tile" onClick={() => { setCameraMessage(""); setSourceOpen(true); }}><Plus size={20} /><strong>Connect a camera</strong><span>RTSP or HTTP stream</span><small>One analyzed source at a time</small></button>
+                </div>}
+                </div>
+
+              </div>
+              <div className="monitor-side-panel">
+                <MonitoringControls date={reviewDate} onDate={setReviewDate} layout={cameraLayout} onLayout={setCameraLayout} eventDates={new Set(state.incidents.map(i => incidentDate(i.opened_at)))} />
+                {reviewDate && <div className="side-date-review"><span>{datedState.incidents.length} incidents</span><button onClick={() => setReviewDate(null)}>Back to live</button></div>}
+              <EventTrace
+                state={datedState}
+                room={room}
+                selected={selectedIncident}
+                onSelect={setSelectedIncident}
+                onAction={action}
+                onSeek={(time) => {
+                  setPlaying(false);
+                  setPosition(time);
+                  if (video.current) {
+                    video.current.pause();
+                    video.current.currentTime = time;
+                  }
+                }}
+                onReport={async (id) => {
+                  try {
+                    const r = await request<{
+                      markdown: string;
+                      source: "claude" | "facts";
+                      removed_lines: number;
+                    }>(`/incidents/${id}/report`, undefined, "GET");
+                    setReport({ id, ...r });
+                  } catch (e) {
+                    notify(e instanceof Error ? e.message : "Report unavailable");
+                  }
+                }}
+              />
+              </div>
                   <div className="playback">
                     <div className="playback-top">
                       <div className="playback-left">
@@ -1707,13 +1752,6 @@ export default function App() {
                           ) : (
                             <Play size={16} fill="currentColor" />
                           )}
-                        </button>
-                        <button
-                          className="icon-button"
-                          title="Reset session"
-                          onClick={reset}
-                        >
-                          <RotateCcw size={15} />
                         </button>
                         <span className="timecode">
                           {stamp(position)} <span>/ {stamp(duration)}</span>
@@ -1734,115 +1772,33 @@ export default function App() {
                         </button>
                       </div>
                     </div>
-                    <div className="timeline">
-                      <div className="timeline-markers">
-                        {room === 0 &&
-                          state.incidents
-                            .filter(
-                              (i) =>
-                                i.media_time_ms !== undefined &&
-                                i.source_key ===
-                                  (sourceType === "illustration"
-                                    ? "fixture"
-                                    : sourceType === "recording"
-                                      ? state.session.media_id
-                                      : sourceType === "server"
-                                        ? "server_camera"
-                                        : "webcam") &&
-                                i.media_time_ms <= duration * 1000,
-                            )
-                            .map((i) => (
-                              <button
-                                key={i.id}
-                                className={`incident-marker ${i.priority === "critical" ? "critical" : ""}`}
-                                style={{
-                                  left: `${Math.max(1, Math.min(99, (i.media_time_ms! / 1000 / duration) * 100))}%`,
-                                }}
-                                aria-label={`Jump to ${i.title} at ${stamp(i.media_time_ms! / 1000)}`}
-                                title={`${stamp(i.media_time_ms! / 1000)} · ${i.title}`}
-                                onClick={() => {
-                                  setSelectedIncident(i.id);
-                                  setPosition(i.media_time_ms! / 1000);
-                                  if (video.current)
-                                    video.current.currentTime =
-                                      i.media_time_ms! / 1000;
-                                }}
-                              >
-                                <span />
-                              </button>
-                            ))}
-                      </div>
-                      <div className="timeline-grid" />
-                      <div
-                        className="timeline-track"
-                        style={{
-                          width: `${Math.min((position / duration) * 100, 100)}%`,
-                        }}
-                      />
-                      <input
-                        aria-label="Video playback position"
-                        type="range"
-                        min="0"
-                        max={Number.isFinite(duration) ? duration : 120}
-                        step=".1"
-                        value={position}
-                        onChange={(e) => {
-                          const p = Number(e.target.value);
-                          setPosition(p);
-                          if (video.current) video.current.currentTime = p;
-                        }}
-                      />
-                      <div className="timeline-labels">
-                        <span>00:00</span>
-                        <span>{stamp(duration / 4)}</span>
-                        <span>{stamp(duration / 2)}</span>
-                        <span>{stamp(duration * 0.75)}</span>
-                        <span>{stamp(duration)}</span>
-                      </div>
-                    </div>
+                    <EditorTimeline
+                      camera={`${rooms[room].name} · ${rooms[room].id}`}
+                      room={room}
+                      duration={duration}
+                      position={position}
+                      playing={playing}
+                      demo={room !== 0 || sourceType === "illustration"}
+                      peaks={audioPeaks}
+                      video={video}
+                      markers={[
+                        ...(room === 0 ? datedState.incidents.filter(i => i.media_time_ms !== undefined && i.source_key === (sourceType === "illustration" ? "fixture" : sourceType === "recording" ? state.session.media_id : sourceType === "server" ? "server_camera" : "webcam")).map(i => ({ id: i.id, time: i.media_time_ms! / 1000, title: i.title })) : []),
+                        ...((room !== 0 || sourceType === "illustration") && !reviewDate ? [
+                          { id: "sample-motion", time: room === 0 ? 28 : 37, title: "Motion near restricted area", demo: true },
+                          { id: "sample-activity", time: room === 0 ? 83 : 91, title: "Activity flagged for review", demo: true },
+                        ] : []),
+                      ]}
+                      onSeek={(seconds, marker?: TimelineMarker) => {
+                        setPlaying(false);
+                        setPosition(seconds);
+                        if (video.current) {
+                          video.current.pause();
+                          video.current.currentTime = seconds;
+                        }
+                        if (marker && !marker.demo) setSelectedIncident(marker.id);
+                      }}
+                    />
                   </div>
-                </div>
-                <div className="below-camera">
-                  <div>
-                    <span className="status-dot" />
-                    <span>
-                      {sourceType === "illustration"
-                        ? "Demo workspace"
-                        : "Source connected"}
-                    </span>
-                    <span className="dot-divider">·</span>
-                    <span>{zones ? "1 zone enabled" : "Zones hidden"}</span>
-                  </div>
-                  <button onClick={() => setPage("settings")}>
-                    <SlidersHorizontal size={13} />
-                    Monitoring settings
-                    <ArrowUpRight size={12} />
-                  </button>
-                </div>
-              </div>
-              <EventTrace
-                state={state}
-                room={room}
-                selected={selectedIncident}
-                onSelect={setSelectedIncident}
-                onAction={action}
-                onSeek={(time) => {
-                  setPosition(time);
-                  if (video.current) video.current.currentTime = time;
-                }}
-                onReport={async (id) => {
-                  try {
-                    const r = await request<{
-                      markdown: string;
-                      source: "claude" | "facts";
-                      removed_lines: number;
-                    }>(`/incidents/${id}/report`, undefined, "GET");
-                    setReport({ id, ...r });
-                  } catch (e) {
-                    notify(e instanceof Error ? e.message : "Report unavailable");
-                  }
-                }}
-              />
             </section>
           </>
         ) : page === "history" ? (

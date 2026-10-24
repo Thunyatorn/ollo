@@ -1,6 +1,18 @@
 # NestWatch
 
-Safety alerts for home daycares. NestWatch analyzes an existing camera on the daycare's own computer. It warns before a child reaches a restricted area, and flags possible falls, choking-like gestures, rhythmic seizure-like movement and prolonged stillness as "check now" signals. It makes sure one caregiver owns each alert, escalating by phone if nobody responds, and writes a cited incident record with a face-blurred clip. It supports supervision and never replaces it. (The repository and API keep the working name `lookout`.)
+NestWatch is a real-time safety monitoring system that connects to existing CCTV security cameras, detects potential safety incidents, and initiates a response through caregiver notifications and AI agent phone calls. The goal is to turn camera footage into timely action: reach a caregiver, confirm someone is responding, and escalate critical emergencies to 911 through a configured emergency-response workflow. (The repository and API keep the working name `lookout`.)
+
+## Project goal
+
+Connect the full loop from **CCTV feed → real-time event analysis → notification or AI phone call → confirmed response → incident record**. Daycares are the first use case; the core product is a safety monitoring and response layer for existing security cameras.
+
+- **Connect:** ingest compatible CCTV streams, starting with RTSP and HTTP, and keep monitoring even when the dashboard is closed.
+- **Analyze:** recognize configured safety events such as restricted-area entry, possible falls, signs of distress, and prolonged stillness, using observations over time to decide when to raise an incident.
+- **Act:** notify the assigned caregiver immediately. An AI phone agent explains what was observed and where, asks whether the recipient can respond, and records their acknowledgment. Escalate to backup caregivers when nobody responds.
+- **Escalate emergencies:** the intended product includes 911 escalation for critical incidents through an AI agent phone call, governed by an explicit emergency-response policy defining when a call is warranted, whether human confirmation is required, and what location and observed facts the agent must communicate.
+- **Track the outcome:** preserve the event timeline, response ownership, call attempts, acknowledgment, resolution, and relevant evidence.
+
+**Current prototype:** compatible camera-stream ingestion, local event analysis, dashboard alerts, caregiver call integrations, and incident records are implemented. Real provider calls require credentials and explicit session arming; calls otherwise remain simulated. External notification delivery and 911 calling are product goals, not implemented capabilities. Emergency-service integration and its escalation policy still need to be designed and validated; hackathon calls target consenting teammates only. Video observations are safety signals, not medical diagnoses.
 
 Built for Cal Hacks 13.0. [docs/SPEC.md](docs/SPEC.md) is the source of truth: requirements with IDs, acceptance criteria, the tests that verify each one, and the build plan. `server/tests/test_spec.py` fails the suite if the spec and tests disagree. Background research is in the [implementation specification](docs/IMPLEMENTATION_SPEC.md), and measured changes are in the [improvement log](docs/IMPROVEMENT_LOG.md).
 

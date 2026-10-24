@@ -2,7 +2,9 @@
 
 Status: source of truth for the build, 2026-10-24. Product name **NestWatch**; the repository and API keep the working name `lookout` until the M5 rename. This file supersedes [IMPLEMENTATION_SPEC.md](IMPLEMENTATION_SPEC.md) wherever they disagree; that file remains the research background.
 
-**Promise.** NestWatch watches a home daycare's existing camera, raises a "check now" alert when a child may be in danger, makes sure a caregiver takes responsibility, and writes down what happened. It supports supervision and never replaces it.
+**Promise.** NestWatch connects to existing CCTV security cameras, analyzes safety events in real time, and acts through caregiver notifications and AI agent phone calls until a responder takes responsibility. The product goal includes escalation of critical emergencies to 911 through a configured emergency-response workflow, with an incident record of what was observed and how people responded. Daycares are the first use case.
+
+**Product direction and build scope.** The target workflow is CCTV feed → real-time analysis → notification or AI phone call → confirmed response → incident record. The current build implements compatible RTSP/HTTP camera ingestion, local event rules, dashboard alerts, caregiver call integrations, acknowledgment and incident records. External notification delivery and 911 integration remain future work. Before emergency calling is implemented, its policy must define escalation criteria, human confirmation requirements, location information, call content and failure handling. The requirements below describe the prototype; automatic emergency-service calls remain outside its current scope, and hackathon calls target consenting teammates only.
 
 ## How this spec is used
 

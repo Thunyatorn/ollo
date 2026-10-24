@@ -255,7 +255,7 @@ export default function EventTrace({
       </div>
       <footer>
         <span className="status-dot" />
-        {room ? "Camera not connected" : "This session"}
+        {room ? "Demo workspace" : "This session"}
         <span>
           {state.session.calls_armed ? "Calls armed" : "Calls simulated"}
         </span>
