@@ -14,6 +14,7 @@
     "models": ".venv/bin/python -m server.fetch_models",
     "test:design": "node scripts/design-smoke.mjs",
     "test:camera": "node scripts/camera-smoke.mjs",
+    "test:webcam": "node scripts/webcam-smoke.mjs",
     "eval": ".venv/bin/python -m server.evaluate"
   },
   "dependencies": {

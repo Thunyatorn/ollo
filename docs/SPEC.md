@@ -57,6 +57,12 @@ Development is spec-first. Every behavior has a requirement with a stable ID, te
 - **Acceptance:** Frames from an older epoch, an older session, or with a non-increasing sequence number are rejected and never change state. A session reset discards in-flight results.
 - **Verify:** `test_vision.py::test_frames_epoch_order_and_boundary`, `test_coordinator.py::test_reset_invalidates_frames_and_jobs`
 
+#### SRC-5 · Browser camera stays visible
+- **Status:** Done
+- **Why:** with "Use this device's camera", the picture went black after leaving the camera view (Settings, Incident history, another camera) and coming back. The stream was attached to the `<video>` element once, 80 ms after connecting; a re-created element never got it.
+- **Acceptance:** after connecting the browser camera, the main camera view shows the live picture (frames advancing) on first connect, after a round trip through Settings, and after selecting another camera and selecting this one again.
+- **Verify:** `scripts/webcam-smoke.mjs`
+
 #### SRC-4 · Server-side camera capture
 - **Status:** Done
 - **Acceptance:**
