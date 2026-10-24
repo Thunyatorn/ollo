@@ -7,6 +7,9 @@
   POST /twilio/voice      Twilio (signed)                              the call instructions: play the audio, wait for one key press
   POST /twilio/gather     Twilio (signed)                              the key the backup pressed; 1 acknowledges
   POST /twilio/status     Twilio (signed)                              ringing, completed, no answer, ...
+  GET  /watch/state      Garmin watch (pairing code)                  open alerts for that caregiver, and whether to buzz
+  POST /watch/act        Garmin watch (pairing code)                  {alert_id, decision}: I'm on it / I can't respond
+  POST /watch/pair       dashboard (signed-in caregiver)              a pairing code for the caregiver's watch
   GET  /health            monitoring                                   connections and counters, no secrets
 
 Callers prove who they are with their Spacetime token as a bearer token; the worker asks Spacetime (my_role view).
@@ -24,13 +27,14 @@ from fastapi.responses import PlainTextResponse, Response
 from . import ai
 from .calls import TwilioCalls, twilio_outcome, valid_twilio_signature
 from .spacetime import SAFE_ID, Rejected, opt, quoted
+from .watch import WatchKeys, watch_state
 
 log = logging.getLogger("nestwatch.api")
 LOCAL_ORIGIN = r"https?://(localhost|127\.0\.0\.1|\[::1\]|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|[A-Za-z0-9-]+\.local)(:\d+)?"
 NUM = re.compile(r"(\d+)$")
 
 
-def create_app(worker, checker, keyframes, settings, start_loop: bool = True) -> FastAPI:
+def create_app(worker, checker, keyframes, settings, start_loop: bool = True, watch_keys=None) -> FastAPI:
     @contextlib.asynccontextmanager
     async def lifespan(app):
         task = worker.spawn(worker.run(), "poll loop") if start_loop else None
@@ -60,7 +64,7 @@ def create_app(worker, checker, keyframes, settings, start_loop: bool = True) ->
     @app.get("/health")
     def health():
         return {"claude": "on" if claude else "off (plain reports, keyword rules)",
-                "calls": calls.name, **worker.health()}
+                "calls": calls.name, "public_url": settings.public_base_url or None, **worker.health()}
 
     # ---------- rules ----------
     @app.post("/rules/interpret")
@@ -97,6 +101,56 @@ def create_app(worker, checker, keyframes, settings, start_loop: bool = True) ->
                 "schedule": {"named": sch["named"], "start_min": sch["startMin"], "end_min": sch["endMin"]},
                 "severity": result["severity"], "escalation": result["escalation"], "needs_drawing": False,
                 "question": None, "drafted_by": drafted_by}
+
+    # ---------- Garmin watch (garmin/ollo) ----------
+    keys = watch_keys or WatchKeys(settings.watch_keys_file)
+
+    @app.post("/watch/pair")
+    async def watch_pair(who: dict = Depends(caller("caregiver"))):
+        """A signed-in caregiver gets a pairing code for their watch (a new one replaces the old)."""
+        cg = next((c for c in await stdb.sql("SELECT id, name FROM caregiver") if c["id"] == who["caregiverId"]), None)
+        if cg is None:
+            raise HTTPException(404, "no caregiver for this sign-in")
+        return {"code": keys.pair(cg["id"]), "caregiver": cg["name"]}
+
+    async def watch_caregiver(request: Request) -> dict:
+        if keys.throttled():
+            raise HTTPException(429, "too many wrong codes; wait a minute")
+        cid = keys.who(request.headers.get("x-watch-key", ""))
+        if cid is None:
+            raise HTTPException(401, "unknown pairing code; pair the watch again from the dashboard")
+        cg = next((c for c in await stdb.sql("SELECT id, name FROM caregiver") if c["id"] == cid), None)
+        if cg is None:
+            raise HTTPException(401, "that caregiver no longer exists")
+        return cg
+
+    @app.get("/watch/state")
+    async def watch_get_state(request: Request):
+        me = await watch_caregiver(request)
+        alerts = await stdb.sql("SELECT * FROM alert WHERE status = 'notified' OR status = 'escalated' OR status = 'unanswered' OR status = 'owned'")
+        zones = {z["id"]: z["name"] for z in await stdb.sql("SELECT id, name FROM zone")}
+        labels = {p["trackId"]: p["label"] for p in await stdb.sql("SELECT track_id, label FROM track_position")}
+        names = {c["id"]: c["name"] for c in await stdb.sql("SELECT id, name FROM caregiver")}
+        return watch_state(me, alerts, zones, labels, names, worker.clock())
+
+    @app.post("/watch/act")
+    async def watch_act(request: Request, body: dict = Body(...)):
+        me = await watch_caregiver(request)
+        alert_id, decision = str(body.get("alert_id", "")), str(body.get("decision", ""))
+        if not SAFE_ID.match(alert_id) or decision not in ("acknowledge", "decline"):
+            raise HTTPException(422, "need alert_id and decision acknowledge or decline")
+        try:
+            await stdb.call("acknowledge_alert" if decision == "acknowledge" else "decline_alert", [alert_id, me["id"], "watch"])
+        except Rejected as e:
+            raise HTTPException(409, f"not recorded: {str(e)[:120]}")
+        rows = await stdb.sql(f"SELECT owner_id, status FROM alert WHERE id = {quoted(alert_id)}")
+        owner = rows[0]["ownerId"] if rows else None
+        if decision == "acknowledge":
+            if owner == me["id"]:
+                return {"ok": True, "say": "You have it"}
+            names = {c["id"]: c["name"] for c in await stdb.sql("SELECT id, name FROM caregiver")}
+            return {"ok": True, "say": f"{names.get(owner, 'Someone')} has it" if owner else "Not recorded"}
+        return {"ok": True, "say": "Next person told"}
 
     # ---------- key frames from the vision service ----------
     @app.post("/keyframes")

@@ -1,0 +1,8 @@
+<settings>
+    <setting propertyKey="@Properties.ServerUrl" title="@Strings.ServerUrlTitle">
+        <settingConfig type="alphaNumeric" />
+    </setting>
+    <setting propertyKey="@Properties.PairingCode" title="@Strings.PairingCodeTitle">
+        <settingConfig type="alphaNumeric" />
+    </setting>
+</settings>

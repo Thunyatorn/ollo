@@ -10,6 +10,7 @@ export default function Settings() {
       <nav className="page-tabs" aria-label="Settings sections">
         <NavLink to="/settings" end className={({ isActive }) => (isActive ? 'active' : '')}>Room and camera</NavLink>
         <NavLink to="/settings/caregivers" className={({ isActive }) => (isActive ? 'active' : '')}>Caregivers</NavLink>
+        <NavLink to="/settings/watch" className={({ isActive }) => (isActive ? 'active' : '')}>Garmin watch</NavLink>
       </nav>
       <Outlet />
     </section>

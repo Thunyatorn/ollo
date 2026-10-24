@@ -9,6 +9,7 @@ import Rules from './pages/Rules';
 import Reports from './pages/Reports';
 import Caregivers from './pages/Caregivers';
 import Settings from './pages/Settings';
+import WatchPairing from './pages/WatchPairing';
 import PhoneLayout from './pages/PhoneLayout';
 import PhoneAlert from './pages/PhoneAlert';
 import PhoneRule from './pages/PhoneRule';
@@ -42,6 +43,7 @@ export default function App() {
         <Route path="settings" element={<Settings />}>
           <Route index element={<Setup />} />
           <Route path="caregivers" element={<Caregivers />} />
+          <Route path="watch" element={<WatchPairing />} />
         </Route>
         <Route path="setup" element={<Navigate to="/settings" replace />} />
         <Route path="rules" element={<Rules />} />
