@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.venv/
+.env
+__pycache__/
+*.pyc
+*.tsbuildinfo
+server/data/
+data/
+test-results/
+.DS_Store
+
+.env.*
+!.env.example
+.pytest_cache/
