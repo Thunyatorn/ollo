@@ -16,11 +16,12 @@ import numpy as np
 import uvicorn
 
 from .alarm import AlarmPlayer
+from .autoclose import AutoCloser
 from .buzzers import BuzzerHub
 from .calibration import demo_homography
 from .coordinator import AlertCoordinator
 from .local_api import Control, Latest, VisionContext, create_app
-from .capture import open_source
+from .capture import LiveSource, open_source
 from .config import EvidenceConfig, PipelineConfig, PoseConfig
 from .evidence import EvidenceRecorder
 from .uploader import KeyframeUploader
@@ -56,7 +57,7 @@ class ZoneRefresher(threading.Thread):
 class AlertPoller(threading.Thread):
     """Reads the live alerts (twice a second) and the caregiver roster (every 5 s), and hands them to the coordinator,
     which decides buzzes, stops and the local alarm."""
-    ALERTS = ("SELECT id, status, severity, owner_id, escalation_level FROM alert "
+    ALERTS = ("SELECT id, status, severity, owner_id, escalation_level, track_id, zone_id, event_type FROM alert "
               "WHERE status = 'notified' OR status = 'escalated' OR status = 'unanswered' OR status = 'owned'")
 
     def __init__(self, client: SpacetimeHttp, coordinator: AlertCoordinator, every: float = 0.5):
@@ -64,6 +65,7 @@ class AlertPoller(threading.Thread):
         self.client, self.coord, self.every = client, coordinator, every
         self._stop_evt = threading.Event()
         self.caregivers: list[dict] = []
+        self.alerts: list[dict] = []          # the newest rows, read by the camera loop for auto-closing
         self.ok = False
 
     def run(self) -> None:
@@ -73,7 +75,8 @@ class AlertPoller(threading.Thread):
                 if time.monotonic() - last_roster > 5.0:
                     self.caregivers = self.client.sql("SELECT id, name, role, buzzer_id, on_duty FROM caregiver")
                     last_roster = time.monotonic()
-                self.coord.tick(self.client.sql(self.ALERTS), self.caregivers)
+                self.alerts = self.client.sql(self.ALERTS)
+                self.coord.tick(self.alerts, self.caregivers)
                 if not self.ok:
                     log.info("watching alerts")
                 self.ok = True
@@ -124,6 +127,19 @@ def main(argv=None) -> None:
         src.start()
     frames = src.frames()
     first = next(frames, None)
+    if isinstance(src, LiveSource):
+        def camera_down():
+            log.error("camera '%s' stopped sending frames; waiting for it to come back", a.camera)
+            if sink:
+                sink.health(a.camera, "offline")
+            coord.camera_offline(a.camera)
+
+        def camera_up():
+            log.info("camera '%s' is back", a.camera)
+            if sink:
+                sink.health(a.camera, "online")
+            coord.camera_online(a.camera)
+        frames = src.watch(lambda: camera_down(), lambda: camera_up(), after=first.index)     # sink and coord exist by the time a frame is missed
     if first is None:
         raise SystemExit("no frames from the camera")
     if H is None and a.demo_map:
@@ -160,6 +176,9 @@ def main(argv=None) -> None:
     coord = AlertCoordinator(hub, alarm, acknowledge)
     hub.on_ack = coord.on_buzzer_ack
     poller = AlertPoller(client, coord)
+    closer = AutoCloser(lambda aid, why: (log.info("closing %s: %s", aid, why), sink.reducer("close_alert", [aid, why]))) if sink else None
+    last_close = 0.0
+    unsent_high: dict[str, float] = {}       # clip_ref -> when a HIGH event was raised, until Spacetime has it
     server = None
     if not a.no_api:
         poller.start()
@@ -197,13 +216,28 @@ def main(argv=None) -> None:
             if sink and res.positions and now - last_pos >= 0.1:            # about 8 to 10 position updates a second (spec)
                 sink.positions(a.room, res.positions)
                 last_pos = now
+            if closer and now - last_close >= 0.5:                                # flow 1 step 8: child back in the play area
+                closer.update(poller.alerts, {f"t{tr.id}": tr.pos for tr in res.tracks if tr.visible},
+                              {z.id: z for z in zones.zones}, f.t)
+                last_close = now
             for e in res.events:
                 log.warning("ALERT %s %s %s predicted %s s", e.track_id, e.event_type, e.zone_id, e.predicted_entry_s)
                 coord.on_local_event(e.clip_ref, e.severity, bool(sink and sink.online))     # no Spacetime: sound the alarm here
+                if sink and e.severity == "high":
+                    unsent_high[e.clip_ref] = now
                 if recorder:
                     recorder.trigger(e.clip_ref, f.t)
                 if sink:
                     sink.event(e.track_id, e.event_type, e.zone_id, e.severity, e.predicted_entry_s, e.clip_ref)
+            if unsent_high:                       # an outage is only noticed after a request times out: a HIGH event that
+                waiting = sink.unsent_clips()     # has not reached Spacetime within 2 s sounds the local alarm anyway
+                for ref, raised in list(unsent_high.items()):
+                    if ref not in waiting:
+                        del unsent_high[ref]
+                    elif now - raised > 2.0:
+                        log.warning("%s has not reached Spacetime after 2 s", ref)
+                        coord.on_local_event(ref, "high", False)
+                        del unsent_high[ref]
             if recorder:
                 recorder.tick(f.t)
                 if now - last_clean >= 3600:

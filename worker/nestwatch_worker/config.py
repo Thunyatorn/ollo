@@ -54,8 +54,8 @@ class Settings:
     cartesia_version: str = field(default_factory=lambda: _env("CARTESIA_VERSION", "2026-08-14"))
     sim_outcome: str = field(default_factory=lambda: _env("SIM_CALL_OUTCOME", "no_answer"))   # no_answer | press1 | error
     sim_ring_s: float = field(default_factory=lambda: float(_env("SIM_RING_S", "6")))
-    call_retries: int = 2                 # extra attempts when placing a call fails outright
-    call_retry_delays_s: tuple = (2.0, 5.0)
+    call_retries: int = 1                 # one retry when placing a call fails outright (CLUADE.md failure table)
+    call_retry_delays_s: tuple = (3.0,)
 
     def twilio_ready(self) -> bool:
         need = [self.twilio_sid, self.twilio_token, self.twilio_from, self.cartesia_key, self.cartesia_voice, self.cartesia_model, self.cartesia_version]

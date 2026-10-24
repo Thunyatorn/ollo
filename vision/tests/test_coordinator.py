@@ -146,3 +146,22 @@ def test_a_buzzer_that_reconnects_is_told_again_about_alerts_still_open():
     hub.gen["buzzer-maria"] = 2                                                                   # battery swap, Wi-Fi blip, reload
     c.tick([alert("notified", aid="a_1"), alert("notified", aid="a_2")], CG)
     assert sum(1 for b, m in hub.sent if b == "buzzer-maria" and m["type"] == "buzz") == 4       # both re-sent to the new connection
+
+
+def test_camera_drop_buzzes_the_primary_once_and_stops_when_back():
+    c, hub, alarm, _ = make()
+    c.tick([], CG)
+    c.camera_offline("cam1")
+    c.camera_offline("cam1")
+    assert hub.sent == [("buzzer-maria", {"type": "buzz", "alert_id": "camera_cam1", "severity": "medium"})]
+    c.camera_online("cam1")
+    assert {m["type"] for _, m in hub.sent[1:]} == {"stop"} and len(hub.sent) == 1 + len(hub.connected)
+
+
+def test_camera_drop_with_no_roster_buzzes_everyone_and_a_tap_is_not_sent_to_spacetime():
+    c, hub, alarm, acks = make()
+    c.camera_offline("cam1")                                          # Spacetime down too: roster unknown
+    assert len(hub.sent) == len(hub.connected)
+    c.tick([], CG)
+    assert c.on_buzzer_ack("buzzer-maria", "camera_cam1") and acks == []
+    assert hub.sent[-1][1]["type"] == "stop"

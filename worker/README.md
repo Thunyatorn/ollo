@@ -6,7 +6,7 @@ buzzers, screens and escalation timers still work; calls and reports wait until 
 
 | Job | Trigger | Result |
 | --- | --- | --- |
-| Escalation call | `call_job` queued | Simulated by default. Real: Cartesia speech, Twilio call, press 1 → `acknowledge_alert(via: phone_call)`. A call that fails to place is retried twice, then marked failed (escalation goes on) |
+| Escalation call | `call_job` queued | Simulated by default. Real: Cartesia speech, Twilio call, press 1 → `acknowledge_alert(via: phone_call)`. A call that fails to place is retried once, then marked failed; Spacetime then goes straight to unanswered (local alarm, all staff) |
 | Second opinion | new medium or low alert with key frames | Claude (fast model), hard 5 s limit, may only lower it (`set_urgency`); high alerts are never touched |
 | Incident report | alert closed | Claude (strong model); every line must cite a real event id, others are dropped; without Claude a plain report from the event log |
 | Rule interpretation | `POST /rules/interpret` | inactive zone draft on a named area (`save_zone_draft`); "needs drawing" if no area fits; without Claude a keyword match |

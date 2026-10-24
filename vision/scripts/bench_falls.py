@@ -3,14 +3,14 @@
     .venv/bin/python scripts/bench_falls.py [poses_s|poses_n] [--grid]
 --grid searches the main thresholds on Subjects 1-3 ('tune') only, then reports the chosen setting on Subject 4 ('test').
 """
-import gzip, itertools, json, pickle, sys
+import gzip, itertools, json, os, pickle, sys
 from dataclasses import replace
 sys.path.insert(0, "."); sys.path.insert(0, "/Users/blackslex/Hackathons/ollo-remote")
 from server.evaluate import score                      # the team's own scoring, for a fair comparison
 from nestwatch_vision.detectors.fall import FallConfig, FallDetector
 from nestwatch_vision.pose import Person
 
-D = "/Users/blackslex/Hackathons/datasets/omnifall_gmdcsa24"
+D = os.environ.get("BENCH_DATA", "/Users/blackslex/Hackathons/datasets/omnifall_gmdcsa24")   # or omnifall_caucafall
 which = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("--") else "poses_s"
 cache = pickle.load(gzip.open(f"{D}/{which}.pkl.gz"))
 labels = json.load(open(f"{D}/labels.json"))["clips"]

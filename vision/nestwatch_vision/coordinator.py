@@ -6,6 +6,7 @@
   * as soon as someone owns the alert (or it closes): "stop" to every buzzer that was buzzed, alarm off
   * a tap on a buzzer acknowledges the alert as that buzzer's caregiver
   * a HIGH alert raised while Spacetime is unreachable sounds the local alarm at once (nobody else can be told)
+  * a camera that stops sending frames: one buzz to the primary ("camera_<id>"), stopped when it comes back
 """
 import logging
 from typing import Callable
@@ -25,6 +26,7 @@ class AlertCoordinator:
         self.buzzed: dict[str, set] = {}          # alert id -> (buzzer id, connection number) already sent a buzz
         self.stopped: set = set()                 # alert ids already told to stop
         self.owner_names: dict[str, str] = {}
+        self.cameras_down: set = set()            # "camera_<id>" buzzes still showing
 
     # ---- the polling loop calls this with fresh rows --------------------------------------------------
     def tick(self, alerts: list[dict], caregivers: list[dict]) -> None:
@@ -72,6 +74,10 @@ class AlertCoordinator:
     # ---- events -----------------------------------------------------------------------------------------
     def on_buzzer_ack(self, buzzer_id: str, alert_id: str) -> bool:
         """A caregiver tapped their buzzer. The connection tells us which buzzer; the roster tells us whose it is."""
+        if alert_id in self.cameras_down:                                    # a camera notice: seen, nothing to record
+            self.cameras_down.discard(alert_id)
+            self.hub.broadcast({"type": "stop", "alert_id": alert_id, "owner": "seen"})
+            return True
         who = next((c for c in self.caregivers if c.get("buzzer_id") == buzzer_id), None)
         if who is None or not alert_id:
             log.warning("ignoring ack from buzzer %r for alert %r: not paired with a caregiver", buzzer_id, alert_id)
@@ -83,3 +89,23 @@ class AlertCoordinator:
         """The vision service just raised an event. If Spacetime cannot be reached and it is high, sound the alarm ourselves."""
         if severity == "high" and not spacetime_online:
             self.alarm.start(f"offline:{event_id}", OFFLINE_ALARM_S)
+
+    def camera_offline(self, camera_id: str) -> None:
+        """One buzz to the on-duty primary (every buzzer if the roster is unknown, e.g. Spacetime is down too)."""
+        ref = f"camera_{camera_id}"
+        if ref in self.cameras_down:
+            return
+        self.cameras_down.add(ref)
+        msg = {"type": "buzz", "alert_id": ref, "severity": "medium"}
+        targets = self._targets("notified")
+        if targets:
+            for buzzer in targets:
+                self.hub.send(buzzer, msg)
+        else:
+            self.hub.broadcast(msg)
+
+    def camera_online(self, camera_id: str) -> None:
+        ref = f"camera_{camera_id}"
+        if ref in self.cameras_down:
+            self.cameras_down.discard(ref)
+            self.hub.broadcast({"type": "stop", "alert_id": ref, "owner": "camera is back"})

@@ -193,3 +193,17 @@ async def test_backstop_calls_escalate_due_and_survives_outages(stdb, settings, 
     await asyncio.sleep(0.05)
     assert w.online
     task.cancel()
+
+
+async def test_after_an_outage_only_the_newest_queued_call_is_dialled(stdb, settings, clock):
+    make_alert(stdb, status="unanswered")
+    queue_call(stdb, job="call_1")
+    stdb.t["call_job"].append({"id": "call_2", "alertId": "a_1", "caregiverId": "c_bob", "attempt": 2, "status": "queued"})
+    calls = SimulatedCalls("no_answer", ring_s=30.0)
+    w = worker(stdb, settings, clock, calls)
+    await w.poll()
+    await w.idle()
+    assert [p[0] for p in calls.placed] == ["call_2"]
+    assert {j["id"]: j["status"] for j in stdb.t["call_job"]} == {"call_1": "failed", "call_2": "ringing"}
+    for t in list(calls._tasks.values()):
+        t.cancel()

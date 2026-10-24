@@ -116,6 +116,11 @@ class SpacetimeSink:
         with self._cv:
             return len(self._events)
 
+    def unsent_clips(self) -> set:
+        """clip_refs of report_event calls still waiting to be delivered."""
+        with self._cv:
+            return {args[5] for name, args in self._events if name == "report_event"}
+
     def _run(self) -> None:
         while True:
             with self._cv:

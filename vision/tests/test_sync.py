@@ -111,3 +111,18 @@ def test_only_the_newest_positions_are_kept_when_sending_is_slow():
     sink.stop(); f.stop()
     sent = [c[1][1][0][0] for c in f.calls if c[0] == "update_positions"]
     assert sent == ["t2"]                                       # stale batches were replaced, not queued
+
+
+def test_unsent_clips_lists_events_still_waiting():
+    import requests
+
+    class Down:
+        def call(self, reducer, args):
+            raise requests.ConnectionError("down")
+    sink = SpacetimeSink(Down(), retry_delay=0.05)
+    sink.event("t1", "zone_entry", "z_1", "high", None, "evt_1_t1")
+    sink.reducer("camera_health", ["cam1", "online"])
+    import time
+    time.sleep(0.1)
+    assert sink.unsent_clips() == {"evt_1_t1"}
+    sink.stop()

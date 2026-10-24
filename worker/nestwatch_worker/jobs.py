@@ -98,8 +98,16 @@ class Worker:
         alerts = await self.stdb.sql("SELECT * FROM alert WHERE status != 'reported'")
         jobs = await self.stdb.sql("SELECT * FROM call_job WHERE status = 'queued' OR status = 'cancelled'")
 
+        newest = {}                                             # alert id -> highest queued attempt
         for j in jobs:
-            if j["status"] == "queued" and j["id"] not in self._call_started:
+            if j["status"] == "queued" and j["attempt"] > newest.get(j["alertId"], -1):
+                newest[j["alertId"]] = j["attempt"]
+        for j in jobs:
+            if j["status"] == "queued" and j["id"] not in self._call_started and j["attempt"] < newest[j["alertId"]]:
+                self._call_started.add(j["id"])                 # e.g. the worker was down: ring the backup once, not twice at once
+                log.info("%s superseded by a later attempt; not dialled", j["id"])
+                self.spawn(self.set_job(j["id"], "failed"), f"supersede {j['id']}")
+            elif j["status"] == "queued" and j["id"] not in self._call_started:
                 self._call_started.add(j["id"])
                 self.spawn(self.run_call(j), f"call {j['id']}")
             elif j["status"] == "cancelled" and j["id"] in self.live_calls:

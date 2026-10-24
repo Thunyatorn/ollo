@@ -765,6 +765,15 @@ export const updateCallJob = spacetimedb.reducer(
     if (job.status === 'cancelled') return; // the alert was already acknowledged
     ctx.db.callJob.id.update({ ...job, status });
     logEvent(ctx, job.alertId, 'call_result', `Call attempt ${job.attempt}: ${status}`);
+    // The backup call failed (the worker already retried once): do not wait out the timer. Go to unanswered now,
+    // which sounds the local alarm and buzzes all staff (CLUADE.md "Twilio or Cartesia fails").
+    if (status === 'failed' && job.attempt === 1) {
+      const a = ctx.db.alert.id.find(job.alertId);
+      if (a && a.status === 'escalated' && !a.ownerId) {
+        cancelTimers(ctx, a.id);
+        runEscalation(ctx, a.id, 1);
+      }
+    }
   }
 );
 

@@ -107,9 +107,9 @@ class LiveSource:
         if cap is not None:
             cap.release()
 
-    def frames(self, timeout: float = 2.0) -> Iterator[Frame]:
-        """Yield the newest frame each time there is one. Ends when the camera has been silent for `timeout`."""
-        last = -1
+    def frames(self, timeout: float = 2.0, after: int = -1) -> Iterator[Frame]:
+        """Yield the newest frame each time there is one (newer than index `after`). Ends when the camera has been silent for `timeout`."""
+        last = after
         while not self._stop.is_set():
             with self._new:
                 if not self._new.wait_for(lambda: self._latest is not None and self._latest.index != last, timeout):
@@ -118,6 +118,22 @@ class LiveSource:
             last = f.index
             self.delivered += 1
             yield f
+
+    def watch(self, on_offline: Callable[[], None], on_online: Callable[[], None], after: int = -1,
+              timeout: float = 2.0) -> Iterator[Frame]:
+        """Frames that survive camera drops: when the camera goes silent, on_offline() once, keep waiting (the reader
+        thread reconnects), and on_online() when frames come back. Ends only when stopped."""
+        down = False
+        while not self._stop.is_set():
+            for f in self.frames(timeout, after):
+                after = f.index
+                if down:
+                    down = False
+                    on_online()
+                yield f
+            if not self._stop.is_set() and not down:
+                down = True
+                on_offline()
 
     def stop(self) -> None:
         self._stop.set()

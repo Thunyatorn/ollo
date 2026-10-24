@@ -96,3 +96,22 @@ def test_missing_file_is_a_clear_error():
     import pytest
     with pytest.raises(FileNotFoundError):
         list(FileSource("/nonexistent/clip.mp4").frames())
+
+
+def test_watch_survives_a_camera_drop_and_reports_it_once():
+    opened = []
+
+    def open_fn():                                                    # works for 5 frames, then dead for ~0.4 s, then fine
+        n = len(opened)
+        opened.append(n)
+        return FakeCamera(fps=100, fail_after=5) if n == 0 else FakeCamera(fps=100, fail_after=0) if n < 6 else FakeCamera(fps=100)
+    src = LiveSource(0, open_fn=open_fn, reconnect_delay=0.05).start()
+    events = []
+    got = []
+    for f in src.watch(lambda: events.append("offline"), lambda: events.append("online"), timeout=0.1):
+        got.append(f.index)
+        if len(got) == 15:
+            break
+    src.stop()
+    assert events == ["offline", "online"]                            # one notice each way, not one per silent 0.1 s
+    assert got == sorted(set(got))                                    # no frame delivered twice

@@ -7,6 +7,8 @@ calls. Every alert this script opens is acknowledged and closed again.
   .venv/bin/python scripts/flows.py rule           flow 3: plain-language rule, confirm, then turned off again
   .venv/bin/python scripts/flows.py opinion        flow 4: medium alert with key frames (lowering needs Claude on)
   .venv/bin/python scripts/flows.py call-failure   drill: calls fail (worker: SIM_CALL_OUTCOME=error) -> unanswered
+  .venv/bin/python scripts/flows.py worker-down    drill: start with the worker STOPPED; this script starts it later
+For the local-alarm checks, run the vision service too (any clip, e.g. an empty room, with --quiet-alarm).
 """
 import json
 import sys
@@ -16,7 +18,7 @@ from pathlib import Path
 import httpx
 
 ROOT = Path(__file__).resolve().parents[2]
-STDB, DB, WORKER = "http://127.0.0.1:3000", "nestwatch-test", "http://127.0.0.1:8787"
+STDB, DB, WORKER, VISION_API = "http://127.0.0.1:3000", "nestwatch-test", "http://127.0.0.1:8787", "http://127.0.0.1:8000"
 VISION = (ROOT / "tools/.vision-token").read_text().strip()
 TMP = Path(__file__).resolve().parent.parent / ".flows-caregiver-token"       # git-ignored via worker/.flows-*
 NONE = {"none": []}
@@ -107,11 +109,46 @@ def call_failure():
     aid, _ = open_alert("t43")
     wait_for("escalated", lambda: status(aid)["status"] == "escalated", 30)
     wait_for("first call recorded as failed", lambda: any(j["status"] == "failed" for j in sql(f"SELECT status FROM call_job WHERE alert_id = '{aid}'")), 40)
-    wait_for("unanswered after 30 s more (local alarm + all staff)", lambda: status(aid)["status"] == "unanswered", 40)
+    wait_for("unanswered as soon as the call failed (local alarm + all staff)", lambda: status(aid)["status"] == "unanswered", 10)
     print("  call jobs:", sql(f"SELECT id, attempt, status FROM call_job WHERE alert_id = '{aid}'"))
+    try:                                                  # the vision service, if running, sounds the alarm on its next poll
+        wait_for("local alarm on the vision computer", lambda: f"unanswered:{aid}" in httpx.get(f"{VISION_API}/health").json()["alarm"]["reasons"], 5)
+    except httpx.HTTPError:
+        print("  (vision service not running: alarm not checked)")
     call(VISION, "acknowledge_alert", [aid, "c_maria", "buzzer"])
     close(aid, "Drill over")
     report_for(aid)
+
+
+def worker_down():
+    import os
+    import subprocess
+    if _up(WORKER):
+        raise SystemExit("stop the worker first")
+    aid, _ = open_alert("t61")
+    wait_for("escalated by Spacetime's own timer (no worker)", lambda: status(aid)["status"] == "escalated", 30)
+    wait_for("unanswered by the second timer", lambda: status(aid)["status"] == "unanswered", 40)
+    if _up(VISION_API):
+        wait_for("local alarm on the vision computer", lambda: f"unanswered:{aid}" in httpx.get(f"{VISION_API}/health").json()["alarm"]["reasons"], 5)
+    print("  calls waiting:", sql(f"SELECT id, attempt, status FROM call_job WHERE alert_id = '{aid}'"))
+    env = dict(os.environ, SIM_CALL_OUTCOME="press1", SIM_RING_S="3")
+    subprocess.Popen([sys.executable, "-m", "nestwatch_worker.main"], env=env, cwd=Path(__file__).resolve().parent.parent,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    print("  worker started (press1); it keeps running afterwards")
+    wait_for("backup reached once the worker is back", lambda: status(aid)["acked_via"] == [0, "phone_call"], 30)
+    calls = sql(f"SELECT id, attempt, status FROM call_job WHERE alert_id = '{aid}'")
+    print("  calls:", calls)
+    assert sum(c["status"] == "answered" for c in calls) == 1, "only the newest waiting call should ring"
+    close(aid, "Drill over")
+    report_for(aid)
+
+
+def _up(url) -> bool:
+    try:
+        httpx.get(f"{url}/health", timeout=1)
+        return True
+    except httpx.HTTPError:
+        return False
 
 
 def rule():
@@ -149,5 +186,5 @@ def opinion():
 
 
 if __name__ == "__main__":
-    {"primary": primary, "escalation": escalation, "rule": rule, "opinion": opinion, "call-failure": call_failure}[sys.argv[1]]()
+    {"primary": primary, "escalation": escalation, "rule": rule, "opinion": opinion, "call-failure": call_failure, "worker-down": worker_down}[sys.argv[1]]()
     print("PASS")
