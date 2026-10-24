@@ -16,6 +16,13 @@ def test_opinion_lowers_medium_to_low():
     assert v == {"lower_to": "low", "note": "Second opinion (Claude): An adult is kneeling next to the child."}
 
 
+def test_long_opinion_reason_is_cut_at_a_word():
+    v = ai.check_opinion({"verdict": "lower", "lower_to": "low", "reason": "An adult stands beside the child. " * 20}, "medium")
+    note = v["note"].removeprefix("Second opinion (Claude): ")
+    last = note.removesuffix("...").split()[-1].strip(".")
+    assert len(note) <= 300 and note.endswith("...") and last in {"An", "adult", "stands", "beside", "the", "child"}
+
+
 @pytest.mark.parametrize("data,severity", [
     ({"verdict": "lower", "lower_to": "low", "reason": "x"}, "high"),          # high is never touched
     ({"verdict": "lower", "lower_to": "medium", "reason": "x"}, "medium"),     # not lower

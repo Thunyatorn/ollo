@@ -68,9 +68,11 @@ def check_opinion(data: dict, severity: str) -> dict | None:
     lower_to = data.get("lower_to")
     if lower_to not in SEVERITY_RANK or SEVERITY_RANK[lower_to] >= SEVERITY_RANK[severity]:
         return None
-    reason = str(data.get("reason") or "").strip()[:300]
+    reason = str(data.get("reason") or "").strip()
     if not reason or DIAGNOSIS.search(reason):
         return None
+    if len(reason) > 300:                                     # cut at a word, not in the middle of one
+        reason = reason[:297].rsplit(" ", 1)[0].rstrip(" ,;:.") + "..."
     return {"lower_to": lower_to, "note": f"Second opinion (Claude): {reason}"}
 
 
