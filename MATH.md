@@ -961,3 +961,20 @@ All of these live in `config.py`. Every one marked "start" must be re-checked on
 - E. S. Page (1954), "Continuous inspection schemes": CUSUM. A. Wald, *Sequential Analysis*: the likelihood-ratio view behind it.
 - G. Casiez, N. Roussel, D. Vogel (2012), "1 Euro Filter": the keypoint smoothing.
 - B. Kwolek and M. Kepski (2014), "Human fall detection on embedded platform using depth maps and wireless accelerometer", *Computer Methods and Programs in Biomedicine* 117(3): the UR Fall dataset paper (cited on the page you shared).
+
+### 8.1a Fresh test on CAUCAFall (2026-10-24)
+
+All 100 CAUCAFall clips (10 subjects, 50 falls, 50 everyday; CC BY 4.0, OmniFall labels), never used for tuning.
+YOLO26s poses, the shipped `FallConfig` defaults, the team's scoring rule (hit = alert 0-5 s after onset).
+
+| | Result | 95% interval |
+| --- | --- | --- |
+| Falls caught | 37/50 (74%) | 60-84% |
+| Precision | 74% (13 false alarms) | 60-84% |
+| Everyday clips with a false alarm | 12/50 (24%) | 14-37% |
+| Median delay | 1.8 s | |
+
+By kind: backwards 7/10, forward 9/10, left 7/10, right 9/10, sitting 5/10. False alarms: pick up object 6,
+kneel 4, sit down 2, forward-fall clip 1, hop 0, walk 0. Bending to the floor is the main confusion.
+The team's detector on the same clips: run in progress (`omnifall_caucafall/full_out`), not yet recorded.
+Rebuild: `scripts/make_caucafall_labels.py`, `scripts/cache_poses.py`, `BENCH_DATA=.../omnifall_caucafall scripts/bench_falls.py`.
