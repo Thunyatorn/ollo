@@ -1,6 +1,6 @@
 {
-  "name": "Ollo",
-  "short_name": "Ollo",
+  "name": "ollo",
+  "short_name": "ollo",
   "start_url": "/m/alert",
   "display": "standalone",
   "background_color": "#f6f7f5",

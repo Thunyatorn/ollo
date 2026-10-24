@@ -1,4 +1,4 @@
-# Ollo worker
+# ollo worker
 
 The only component that talks to outside services (Claude, Cartesia, Twilio). It watches Spacetime, does slow work in
 the background and writes results back through server functions. It is never on the alert path: if it is down,

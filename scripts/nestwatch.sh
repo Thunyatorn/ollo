@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start, stop and check the Ollo Spacetime edition on this computer.
+# Start, stop and check the ollo Spacetime edition on this computer.
 #
 #   scripts/nestwatch.sh start [--source demo|webcam|phone|FILE|URL] [--calls simulated|real] [--loud-alarm] [--demo-map]
 #   scripts/nestwatch.sh status
@@ -52,7 +52,7 @@ cmd_status() {
   if up "http://127.0.0.1:$VISION_PORT/health"; then
     say "Vision service:        running  ($(curl -s -m 2 "http://127.0.0.1:$VISION_PORT/health" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("camera", "online" if d["camera_online"] else "OFFLINE", "|", d["fps"], "fps |", "calibrated" if d["calibrated"] else "not calibrated")'))"
   else say "Vision service:        not running"; fi
-  if curl -s -m 2 "http://127.0.0.1:$WEB_PORT/" | grep -q "Ollo"; then say "Website:               running  -> http://127.0.0.1:$WEB_PORT"
+  if curl -s -m 2 "http://127.0.0.1:$WEB_PORT/" | grep -q "ollo"; then say "Website:               running  -> http://127.0.0.1:$WEB_PORT"
   else say "Website:               not running"; fi
 }
 
@@ -87,7 +87,7 @@ cmd_start() {
   launch worker "$ROOT/worker" bash -c 'set -a; . ./.env; set +a; exec "$@"' _ env $WENV .venv/bin/python -m nestwatch_worker.main
 
   # website (only if it is not already up)
-  if ! curl -s -m 2 "http://127.0.0.1:$WEB_PORT/" | grep -q "Ollo"; then
+  if ! curl -s -m 2 "http://127.0.0.1:$WEB_PORT/" | grep -q "ollo"; then
     : > "$LOGS/web.log"
     launch web "$ROOT/web" node_modules/.bin/vite --host --port "$WEB_PORT"
   fi

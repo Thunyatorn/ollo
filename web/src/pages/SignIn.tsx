@@ -27,7 +27,7 @@ export default function SignIn() {
   return (
     <div className="phone" style={{ paddingTop: '14vh' }}>
       <form className="card stack" onSubmit={submit}>
-        <h1 className="phone-title"><Eye size={22} strokeWidth={1.6} />Ollo</h1>
+        <h1 className="phone-title"><Eye size={22} strokeWidth={1.6} />ollo</h1>
         <p className="muted">Sign in to see alerts and the room.</p>
         <div>
           <label htmlFor="who">Who are you?</label>

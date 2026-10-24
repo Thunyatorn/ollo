@@ -1,4 +1,4 @@
-# Ollo wrist buzzer (ESP32)
+# ollo wrist buzzer (ESP32)
 
 Vibrates when the vision service tells it to and acknowledges with one button. It talks only to the vision service on
 the daycare network, so it keeps working without internet.

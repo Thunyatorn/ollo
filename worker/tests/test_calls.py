@@ -11,7 +11,7 @@ from nestwatch_worker.calls import (NotRetryable, TwilioCalls, call_message, twi
 def test_message_has_place_and_time_but_no_names_or_tracks():
     alert = {"eventType": "zone_entry", "trackId": "t4", "createdAt": 1000.0}
     text = call_message(alert, "stairs", now=1020.4)
-    assert text == "This is Ollo. A child entered the stairs area 20 seconds ago and nobody has answered yet. Press 1 if you're on it."
+    assert text == "This is ollo. A child entered the stairs area 20 seconds ago and nobody has answered yet. Press 1 if you're on it."
     assert "t4" not in text and "4" not in text.replace("1 if", "")
 
 

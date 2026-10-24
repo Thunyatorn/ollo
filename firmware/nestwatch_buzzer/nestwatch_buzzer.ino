@@ -1,4 +1,4 @@
-// Ollo wrist buzzer (ESP32). Spec: CLUADE.md "Wrist buzzer and local alarm".
+// ollo wrist buzzer (ESP32). Spec: CLUADE.md "Wrist buzzer and local alarm".
 //
 // It talks only to the vision service on the daycare network, over a WebSocket at ws://SERVER_HOST:SERVER_PORT/buzzer,
 // so it keeps working when the internet is down. Protocol (JSON):
