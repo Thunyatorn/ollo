@@ -25,6 +25,15 @@ video goes phone to laptop only: no cloud, no tunnel. Blurring and clips work ex
 
 ## Good to know
 
+- **Picture size adapts:** the page sends 640 px wide frames (the size the model reads) and shrinks them down to 320 px
+  by itself when the Wi-Fi is slow, then grows them again. The page shows the frame rate, size and time per frame.
+- **Keep the page in front:** a page in a background tab, or on a locked phone, can slow down or stop. The page times
+  its frames from a worker thread so a background tab keeps going, but a locked phone will still stop sending.
+- **Laptop webcam:** you don't need this page for the laptop's own camera; use `main.py 0` instead. Opening the page on
+  the laptop also works (it then uses the laptop's camera) and is a handy way to check the page itself.
+- **No positions yet?** `0 tracks` means the camera isn't calibrated: calibrate in Setup, or add `--demo-map` for a
+  quick look that stretches the picture over the room (positions are then not real).
+
 - **Pairing code:** frames are accepted only with the code printed on the laptop, so another device on the Wi-Fi cannot
   feed in a fake picture. A new code is made each run; pass `--phone-code` to keep one.
 - **Phone goes quiet** (locked, Wi-Fi drop, page closed): the camera shows offline on the dashboard, the primary's buzzer

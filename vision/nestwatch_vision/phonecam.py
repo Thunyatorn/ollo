@@ -40,15 +40,24 @@ class PhoneFeed:
         self._cv = threading.Condition()
         self._img: np.ndarray | None = None
         self._seq = self._read_seq = 0
-        self.received = 0
+        self.received = self.stale = 0
         self.last_push = 0.0
+        self._session, self._last_in = "", 0
 
-    def push(self, img: np.ndarray) -> None:
+    def push(self, img: np.ndarray, session: str = "", seq: int = 0) -> bool:
+        """Keep `img` as the newest frame. The phone sends several frames at once, so a frame that arrives after a
+        NEWER one from the same page session is dropped (False): old pictures must never replace new ones."""
         with self._cv:
+            if session and session == self._session and seq and seq <= self._last_in:
+                self.stale += 1
+                return False
+            if session:
+                self._session, self._last_in = session, max(seq, self._last_in if session == self._session else 0)
             self._img, self._seq = img, self._seq + 1
             self.received += 1
             self.last_push = time.perf_counter()
             self._cv.notify_all()
+            return True
 
     def read(self, timeout: float = 1.0):
         with self._cv:
@@ -81,7 +90,11 @@ def create_phone_app(feed: PhoneFeed, code: str) -> FastAPI:
         img = cv2.imdecode(np.frombuffer(body, np.uint8), cv2.IMREAD_COLOR)
         if img is None:
             raise HTTPException(400, "could not read that JPEG")
-        feed.push(img)
+        try:
+            seq = int(request.headers.get("x-frame-seq") or 0)
+        except ValueError:
+            seq = 0
+        feed.push(img, request.headers.get("x-session", "")[:32], seq)
         return Response(status_code=204, headers={"Cache-Control": "no-store"})
 
     return app

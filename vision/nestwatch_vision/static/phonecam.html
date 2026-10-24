@@ -34,16 +34,19 @@
     <button id="stop" disabled>Stop</button>
   </div>
   <small>The video goes only to the laptop on this Wi-Fi. Nothing is sent over the internet.</small>
-  <small>Put the phone where it sees the whole room, keep this page open, and keep the screen on.</small>
+  <small>Put the phone where it sees the whole room, keep this page open, and keep the screen on (set auto-lock to Never while it runs). If the picture gets smaller, the Wi-Fi is slow.</small>
 </main>
 <script>
 (() => {
-  const TARGET_FPS = 10, WIDTH = 960, QUALITY = 0.7;
+  // The pose model reads 640 px frames, so 640 is plenty. On a slow link the page shrinks the frames by itself.
+  const LADDER = [640, 480, 384, 320], QUALITY = 0.6, TARGET_FPS = 10, MAX_INFLIGHT = 3;
   const code = new URLSearchParams(location.search).get('code') || '';
+  const session = Math.random().toString(36).slice(2, 10);
   const $ = id => document.getElementById(id);
   const video = $('v'), statusEl = $('status');
   let stream = null, running = false, facing = 'environment', wake = null, token = 0;
-  let sent = 0, failures = 0, windowStart = performance.now(), windowCount = 0, fps = 0;
+  let rung = 0, seq = 0, inflight = 0, sent = 0, windowStart = performance.now(), windowCount = 0, fps = 0;
+  let slowWindows = 0, fastWindows = 0, lastMs = 0, lastKB = 0, problem = '';
 
   function say(text, kind) { statusEl.textContent = text; statusEl.className = kind || ''; }
   const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -65,35 +68,72 @@
     try { if ('wakeLock' in navigator) wake = await navigator.wakeLock.request('screen'); } catch (e) { /* optional */ }
   }
 
-  async function loop(mine) {
-    const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d');
-    while (running && mine === token) {
-      const t0 = performance.now();
-      if (video.videoWidth) {
-        const w = Math.min(WIDTH, video.videoWidth), h = Math.round(video.videoHeight * w / video.videoWidth);
-        canvas.width = w; canvas.height = h;
-        ctx.drawImage(video, 0, 0, w, h);
-        const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', QUALITY));
-        try {
-          // one frame at a time: if the Wi-Fi is slow we send fewer frames instead of queueing old ones
-          const res = await fetch('/phone-frame', { method: 'POST', headers: { 'X-Pair-Code': code, 'Content-Type': 'image/jpeg' }, body: blob });
-          if (res.status === 204) {
-            sent++; failures = 0; windowCount++;
-            const now = performance.now();
-            if (now - windowStart >= 1000) { fps = windowCount * 1000 / (now - windowStart); windowStart = now; windowCount = 0; }
-            say(`Sending to the laptop: ${fps.toFixed(1)} frames per second (${sent} sent)`, 'ok');
-          } else if (res.status === 403) {
-            say('The pairing code is wrong. Open the address printed on the laptop, including the part after "?code=".', 'bad');
-            running = false; return;
-          } else { failures++; say(`The laptop refused a frame (${res.status}).`, 'bad'); }
-        } catch (e) {
-          failures++;
-          say('Cannot reach the laptop. Is it on the same Wi-Fi and still running?', 'bad');
-          await sleep(1000);
-        }
-      }
-      await sleep(Math.max(0, 1000 / TARGET_FPS - (performance.now() - t0)));
+  function report() {
+    if (problem) return say(problem, 'bad');
+    say(`Sending to the laptop: ${fps.toFixed(1)} frames per second, ${LADDER[rung]} px wide, ` +
+        `${lastKB.toFixed(0)} KB each, ${lastMs.toFixed(0)} ms per frame (${sent} sent)`, 'ok');
+  }
+
+  // once a second: too slow means smaller pictures, comfortably fast means we can afford bigger ones again
+  function adapt() {
+    const now = performance.now();
+    if (now - windowStart < 1000) return;
+    fps = windowCount * 1000 / (now - windowStart); windowStart = now; windowCount = 0;
+    if (fps < 6) { slowWindows++; fastWindows = 0; } else if (fps >= 9) { fastWindows++; slowWindows = 0; } else { slowWindows = fastWindows = 0; }
+    if (slowWindows >= 2 && rung < LADDER.length - 1) { rung++; slowWindows = 0; }
+    if (fastWindows >= 15 && rung > 0) { rung--; fastWindows = 0; }
+  }
+
+  async function send(blob, n) {
+    const t0 = performance.now();
+    try {
+      const res = await fetch('/phone-frame', { method: 'POST', body: blob,
+        headers: { 'X-Pair-Code': code, 'X-Session': session, 'X-Frame-Seq': String(n), 'Content-Type': 'image/jpeg' } });
+      if (res.status === 204) {
+        sent++; windowCount++; problem = ''; lastMs = performance.now() - t0; lastKB = blob.size / 1024;
+        adapt(); report();
+      } else if (res.status === 403) {
+        problem = 'The pairing code is wrong. Open the address printed on the laptop, including the part after "?code=".';
+        running = false; stopTicker(); report();
+      } else { problem = `The laptop refused a frame (${res.status}).`; report(); }
+    } catch (e) {
+      problem = 'Cannot reach the laptop. Is it on the same Wi-Fi and still running?'; report(); await sleep(1000);
+    } finally { inflight--; }
+  }
+
+  // The beat comes from a worker thread. A page's own timers are slowed to about one a second when its tab is not in
+  // front, which would drop the picture to ~1 frame a second; a worker's timer is not slowed that way.
+  let ticker = null, capturing = false;
+  const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d');
+
+  async function captureAndSend(mine) {
+    if (capturing || !running || mine !== token || !video.videoWidth || inflight >= MAX_INFLIGHT) return;
+    capturing = true;
+    try {
+      const w = Math.min(LADDER[rung], video.videoWidth), h = Math.round(video.videoHeight * w / video.videoWidth);
+      canvas.width = w; canvas.height = h;
+      ctx.drawImage(video, 0, 0, w, h);
+      const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', QUALITY));
+      if (!running || mine !== token) return;
+      inflight++; seq++;
+      send(blob, seq);                                      // not awaited: a slow answer must not hold up the next picture
+    } finally { capturing = false; }
+  }
+
+  function startTicker(mine) {
+    stopTicker();
+    const src = `setInterval(() => postMessage(0), ${Math.round(1000 / TARGET_FPS)})`;
+    try {
+      ticker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+      ticker.onmessage = () => captureAndSend(mine);
+    } catch (e) {                                           // no workers: fall back to the page's own timer
+      ticker = setInterval(() => captureAndSend(mine), 1000 / TARGET_FPS);
     }
+  }
+  function stopTicker() {
+    if (!ticker) return;
+    if (ticker.terminate) ticker.terminate(); else clearInterval(ticker);
+    ticker = null;
   }
 
   async function start() {
@@ -102,9 +142,9 @@
       say('Asking for the camera…');
       await openCamera();
       await keepAwake();
-      running = true; token++;
+      running = true; token++; problem = '';
       $('flip').disabled = false; $('stop').disabled = false;
-      loop(token);
+      startTicker(token);
     } catch (e) {
       $('start').disabled = false;
       say(e.name === 'NotAllowedError' ? 'Camera permission was refused. Allow it in the browser settings and try again.' : (e.message || String(e)), 'bad');
@@ -112,7 +152,7 @@
   }
 
   function stop() {
-    running = false; token++;
+    running = false; token++; stopTicker();
     if (stream) stream.getTracks().forEach(t => t.stop());
     if (wake) { wake.release().catch(() => {}); wake = null; }
     video.srcObject = null;

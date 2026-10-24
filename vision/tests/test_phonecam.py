@@ -85,3 +85,21 @@ def test_certificate_is_reused_and_remade_for_a_new_address(tmp_path):
     san = x509.load_pem_x509_certificate(open(cert2, "rb").read()).extensions.get_extension_for_class(x509.SubjectAlternativeName).value
     assert {"10.0.8.77", "127.0.0.1"} <= {str(i) for i in san.get_values_for_type(x509.IPAddress)}
     assert oct(__import__("os").stat(key1).st_mode & 0o777) == "0o600"
+
+
+def test_late_frames_from_the_same_session_are_dropped_and_a_new_session_resets():
+    feed = PhoneFeed()
+    new, old = np.ones((2, 2, 3), np.uint8), np.zeros((2, 2, 3), np.uint8)
+    assert feed.push(new, "pageA", 5)
+    assert not feed.push(old, "pageA", 4) and feed.stale == 1             # arrived late: must not replace the newer picture
+    assert feed.read(0.05)[1] is new and feed.read(0.05) == (False, None)
+    assert feed.push(old, "pageB", 1)                                     # the page was reloaded: numbering starts again
+    assert feed.push(new, "pageA", 6) and feed.received == 3
+
+
+def test_frame_endpoint_passes_session_and_sequence_through():
+    c, feed = client()
+    h = {"x-pair-code": CODE, "x-session": "s1"}
+    assert c.post("/phone-frame", content=jpeg(), headers={**h, "x-frame-seq": "2"}).status_code == 204
+    assert c.post("/phone-frame", content=jpeg(), headers={**h, "x-frame-seq": "1"}).status_code == 204     # accepted, but ignored as stale
+    assert feed.received == 1 and feed.stale == 1
