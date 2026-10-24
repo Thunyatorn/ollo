@@ -16,10 +16,11 @@ function demoWaveform(seed: number) {
   });
 }
 
-export default function EditorTimeline({ camera, room, duration, position, playing, demo, peaks, video, markers, selectedId, onSeek }: {
+export default function EditorTimeline({ camera, room, duration, position, playing, demo, peaks, video, markers, selectedId, liveDisconnected = false, onSeek }: {
   camera: string; room: number; duration: number; position: number; playing: boolean; demo: boolean;
   peaks: number[] | null; video: RefObject<HTMLVideoElement | null>; markers: TimelineMarker[];
   selectedId?: string | null;
+  liveDisconnected?: boolean;
   onSeek: (seconds: number, marker?: TimelineMarker) => void;
 }) {
   const playhead = useRef<HTMLDivElement>(null);
@@ -45,6 +46,11 @@ export default function EditorTimeline({ camera, room, duration, position, playi
     const h = Math.max(.6, value * 17);
     return `M${x.toFixed(2)},${(20 - h).toFixed(2)}v${(h * 2).toFixed(2)}`;
   }).join(" "), [waveform]);
+  if (liveDisconnected) return <div className="editor-timeline live-timeline" aria-label="Live camera timeline, not connected">
+    <div className="editor-ruler"><span>Live feed</span><span>Waiting for signal</span></div>
+    <div className="editor-track"><div className="editor-clip"><div className="editor-clip-name"><Video size={12} /><strong>{camera}</strong><span className="live-feed-badge">LIVE</span></div><div className="live-timeline-waiting">Not connected</div></div></div>
+    <div className="editor-track-caption"><span><i />Incidents</span></div>
+  </div>;
   return <div className="editor-timeline"
       onPointerDown={e => {
         if (e.button !== 0) return;

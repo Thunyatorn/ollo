@@ -3579,15 +3579,85 @@ input[type="range"], input[type="checkbox"] { accent-color: var(--primary); }
 .editor-workspace .camera-card { overflow: visible; }
 .editor-workspace .camera-toolbar { position: relative; z-index: 35; border-radius: 6px 6px 0 0; }
 .editor-workspace .camera-stage { border-radius: 0 0 6px 6px; }
-.camera-picker { position: relative; min-width: 0; }
-.camera-picker-trigger { display: flex; align-items: center; gap: 18px; padding: 6px 8px; border-radius: 4px; color: #e5edf4; font-size: 12px; text-align: left; }
-.camera-picker-trigger:hover, .camera-picker-trigger[aria-expanded="true"] { background: #9bd7ff0c; }
-.camera-picker-trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.camera-picker-trigger > svg { color: #8c9aa6; transition: transform .15s; }
-.camera-picker-trigger[aria-expanded="true"] > svg { transform: rotate(180deg); }
-.camera-picker-menu { position: absolute; z-index: 90; top: calc(100% + 9px); left: 0; width: 230px; max-width: calc(100vw - 60px); padding: 6px; background: #191e24; border: 1px solid #3b4853; border-radius: 7px; box-shadow: inset 0 1px 0 #cceaff15, 0 14px 35px #0008; }
-.camera-picker-label { display: block; padding: 8px 10px; color: #7e909f; font-size: 8px; letter-spacing: 1.3px; }
-.camera-picker-menu > button { width: 100%; display: flex; align-items: center; gap: 10px; padding: 11px 10px; border-radius: 4px; text-align: left; font-size: 11px; color: #b8c5cf; }
-.camera-picker-menu > button > span { flex: 1; }
-.camera-picker-menu > button[aria-checked="true"] { color: #c8e8fc; background: #9bd7ff10; }
+.camera-picker { position: relative; min-width: 0; width: clamp(170px, 18vw, 230px); border: 1px solid transparent; border-radius: 6px; }
+.camera-picker-trigger { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 30px; padding: 7px 10px; border-radius: 5px; color: #d1dbe3; font-size: 12px; line-height: 16px; text-align: left; }
+.camera-picker-trigger > span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.camera-picker-trigger > svg { flex-shrink: 0; color: #8c9aa6; }
+.camera-picker-chevron { transition: transform .15s; }
+.camera-picker-trigger[aria-expanded="true"] .camera-picker-chevron { transform: rotate(180deg); }
+.camera-picker-trigger:hover { background: var(--primary-soft); }
+.camera-picker.is-open { background: #191e24; border-color: #3b4853; border-radius: 6px 6px 0 0; box-shadow: inset 0 1px 0 var(--edge-highlight); }
+.camera-picker.is-open .camera-picker-trigger { background: transparent; }
+.camera-picker-menu { position: absolute; z-index: 90; top: 100%; left: -1px; width: calc(100% + 2px); padding: 6px 0; background: #191e24; border: 1px solid #3b4853; border-top: 0; border-radius: 0 0 6px 6px; box-shadow: 0 14px 24px #0006; }
+.camera-picker-label { display: block; margin: 0 10px 4px; padding: 9px 0 5px; border-top: 1px solid var(--edge-neutral); color: #7e909f; font-size: 8px; line-height: 12px; letter-spacing: 1.3px; }
+.camera-picker-menu > button { width: 100%; display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 9px 10px; text-align: left; font-size: 12px; line-height: 16px; color: #b8c5cf; }
+.camera-picker-menu > button > svg { flex-shrink: 0; color: #8c9aa6; }
+.camera-picker-menu > button > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.camera-picker-menu > button[aria-checked="true"] { color: #c8e8fc; background: var(--primary-soft); }
 .camera-picker-menu > button:hover, .camera-picker-menu > button:focus-visible { background: #9bd7ff1c; color: #edf6fc; outline: none; }
+.camera-picker-trigger:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* Account controls use the workspace's compact scale and surface tokens. */
+.account-area { gap: 8px; }
+.header-account-identity { display: flex; align-items: center; gap: 9px; min-width: 0; margin-right: 10px; }
+.account-avatar { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; background: #7895ab; color: #102c40; font-size: 12px; font-weight: 600; line-height: 1; }
+.header-account-identity > span:not(.account-avatar) { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 500; color: #c7d0d8; }
+.account-identity > .account-avatar { width: 32px; height: 32px; font-size: 13px; }
+.account-menu > summary, .header-notifications { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 28px; height: 28px; padding: 0; border-radius: 6px; border: 1px solid transparent; background: transparent; color: #8d9daa; cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
+.account-menu > summary:hover, .account-menu[open] > summary, .header-notifications:hover { background: var(--surface-raised); border-color: var(--edge-neutral); color: #d1e3ef; }
+.account-menu > summary:focus-visible, .header-notifications:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+@media (max-width: 600px) {
+  .header-account-identity { margin-right: 2px; gap: 7px; }
+  .header-account-identity > span:not(.account-avatar) { max-width: 100px; font-size: 11px; }
+  .account-area { gap: 5px; }
+}
+
+/* Playback position is the sole source of incident activation. */
+.event-trace .trace-summary { cursor: default; }
+.event-trace .trace-summary:hover { background: transparent; }
+.event-trace .trace-event.expanded { background: #f6ce6105; }
+.event-trace .trace-event.expanded .trace-node,
+.event-trace .trace-event.expanded .trace-meta time { color: #f6ce61; }
+
+/* Live sources have a signal state, rather than a fictional recording. */
+.live-camera-placeholder { position: absolute; inset: 0; background: #0d1115; color: #869aa9; }
+.live-camera-clock { position: absolute; top: 16px; right: 16px; display: flex; align-items: center; gap: 10px; z-index: 3; }
+.live-camera-clock time { font: 14px ui-monospace, monospace; color: #9bafbc; }
+.live-feed-badge { display: inline-flex; align-items: center; padding: 4px 7px; border: 1px solid #779bb54d; border-radius: 3px; background: #20323f; color: #b6dcf4; font: 9px ui-monospace, monospace; letter-spacing: 1px; }
+.live-camera-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 13px; }
+.live-camera-empty > svg { color: #547184; }
+.live-camera-empty strong { font-size: 13px; font-weight: 500; color: #b8c6d0; }
+.live-camera-empty > span { display: flex; align-items: center; gap: 6px; font-size: 10px; color: #778c9b; }
+.live-timeline .editor-clip { background: #17222b; border-color: #52748c; color: #a9c6da; }
+.live-timeline .editor-clip-name { border-color: #52748c55; }
+.live-timeline .editor-clip-name > .live-feed-badge { color: #b6dcf4; opacity: 1; margin-right: 4px; font-size: 8px; padding: 1px 4px; }
+.live-timeline .editor-ruler { cursor: default; }
+.live-timeline-waiting { height: 22px; display: flex; align-items: center; justify-content: center; color: #8196a5; font-size: 9px; background: repeating-linear-gradient(90deg, transparent 0, transparent 23px, #9bd7ff06 23px, #9bd7ff06 24px); }
+.layout-grid .live-camera-clock { top: 8px; right: 8px; }
+.layout-grid .live-camera-clock time { font-size: 10px; }
+.layout-grid .live-camera-empty { gap: 8px; }
+@media (max-width: 540px) { .layout-grid .live-camera-clock time { display: none; } .layout-grid .live-camera-empty > svg { width: 25px; height: 25px; } }
+.live-timeline-waiting { height: 24px; }
+@media (max-height: 620px) { .editor-workspace .live-timeline-waiting { height: 18px; } }
+
+/* Compact chrome and a shared, adjustable camera/event-panel boundary. */
+.editor-workspace .resizable-workspace { position: relative; gap: 6px; padding: 8px 10px 0; }
+.editor-workspace .resizable-workspace > .monitor-column { grid-column: 1; grid-row: 1; }
+.editor-workspace .monitor-side-panel { gap: 6px; }
+.editor-workspace .monitor-side-panel .monitor-controls { padding: 6px; }
+.editor-workspace .monitor-side-panel .monitor-control-actions { gap: 6px; }
+.editor-workspace .trace-summary { padding: 12px 14px; }
+.editor-workspace .trace-activity-step { padding-bottom: 12px; }
+.editor-workspace .monitor-grid > .playback { margin-left: -10px; margin-right: -10px; padding-left: 12px; padding-right: 12px; }
+.workspace-divider { display: none; }
+@media (min-width: 761px) {
+  .editor-workspace .resizable-workspace { grid-template-columns: minmax(0, 1fr) var(--monitor-panel-width, 320px); }
+  .workspace-divider { display: block; grid-column: 1; grid-row: 1; justify-self: end; align-self: stretch; position: relative; width: 10px; margin-right: -8px; z-index: 40; cursor: col-resize; touch-action: none; outline: none; }
+  .workspace-divider::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; border-radius: 2px; background: transparent; transition: background .15s; }
+  .workspace-divider:hover::after, .workspace-divider:focus-visible::after, .workspace-divider[data-dragging="true"]::after { background: #9bd7ff99; }
+}
+body:has(.workspace-divider[data-dragging="true"]) { cursor: col-resize; user-select: none; }
+@media (max-width: 540px) {
+  .editor-workspace .resizable-workspace { padding-left: 6px; padding-right: 6px; }
+  .editor-workspace .monitor-grid > .playback { margin-left: -6px; margin-right: -6px; }
+}

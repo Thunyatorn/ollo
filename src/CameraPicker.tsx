@@ -15,9 +15,9 @@ export default function CameraPicker({ rooms, selected, onSelect }: {
     return () => document.removeEventListener("pointerdown", dismiss);
   }, [open, selected]);
   const close = () => { setOpen(false); trigger.current?.focus(); };
-  return <div ref={root} className="camera-picker" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); close(); } }}>
+  return <div ref={root} className={`camera-picker${open ? " is-open" : ""}`} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); close(); } }}>
     <button ref={trigger} className="camera-picker-trigger" aria-label={`Select camera: ${rooms[selected].name}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)} onKeyDown={event => { if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setOpen(true); } }}>
-      <span>{rooms[selected].name}</span><ChevronDown size={14} />
+      <Video size={14} /><span>{rooms[selected].name}</span><ChevronDown className="camera-picker-chevron" size={14} />
     </button>
     {open && <div className="camera-picker-menu" role="menu" aria-label="Cameras" onKeyDown={event => {
       const current = options.current.indexOf(document.activeElement as HTMLButtonElement);

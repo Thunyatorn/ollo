@@ -1,3 +1,4 @@
+import Navbar from "./Navbar";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Activity,
@@ -168,6 +169,7 @@ export default function DesignSystem() {
   }
   return (
     <div className="ds-page">
+      <Navbar />
       <aside className="ds-nav">
         <a href="/" className="ds-logo">
           <Eye size={26} /> ollo<span>DESIGN SYSTEM</span>

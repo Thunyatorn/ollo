@@ -1,11 +1,11 @@
 import {
   Check,
   CheckCheck,
-  ChevronDown,
   Circle,
   Phone,
   ScanLine,
   Sparkles,
+  WifiOff,
   X,
 } from "lucide-react";
 import type { LookoutState } from "./types";
@@ -21,7 +21,6 @@ export default function EventTrace({
   state,
   room,
   selected,
-  onSelect,
   onAction,
   onSeek,
   onReport,
@@ -29,7 +28,6 @@ export default function EventTrace({
   state: LookoutState;
   room: number;
   selected: string | null;
-  onSelect: (id: string | null) => void;
   onAction: (id: string, action: string) => void;
   onSeek: (seconds: number) => void;
   onReport: (id: string) => void;
@@ -48,18 +46,14 @@ export default function EventTrace({
         {!incidents.length ? (
           <div className="trace-empty">
             <span className="quiet-orbit">
-              <Check size={18} />
+              {room === 2 ? <WifiOff size={18} /> : <Check size={18} />}
             </span>
-            <p>Things are chilling</p>
-            <span>Recorded events will appear here.</span>
+            <p>{room === 2 ? "Camera not connected" : "Things are chilling"}</p>
+            <span>{room === 2 ? "Waiting for a live feed." : "Recorded events will appear here."}</span>
           </div>
         ) : (
           incidents.map((incident) => {
-            const expanded =
-              selected === incident.id ||
-              (selected === null &&
-                (incident.status === "open" ||
-                  incident.status === "acknowledged"));
+            const expanded = selected === incident.id;
             const attempts =
               state.attempts?.filter((a) => a.incident_id === incident.id) ||
               [];
@@ -68,14 +62,7 @@ export default function EventTrace({
                 key={incident.id}
                 className={`trace-event ${incident.priority === "critical" ? "critical" : ""} ${expanded ? "expanded" : ""}`}
               >
-                <button
-                  className="trace-summary"
-                  onClick={() => {
-                    onSelect(expanded ? "collapsed" : incident.id);
-                  }}
-                  aria-expanded={expanded}
-                  aria-controls={`trace-details-${incident.id}`}
-                >
+                <div className="trace-summary">
                   <span className="trace-node">
                     <Circle size={7} fill="currentColor" />
                   </span>
@@ -104,8 +91,7 @@ export default function EventTrace({
                         </span>
                       )}
                   </div>
-                  <ChevronDown size={13} />
-                </button>
+                </div>
                 {expanded && (
                   <div className="trace-detail" id={`trace-details-${incident.id}`}>
                     {incident.observations.map((observation, index) => <p key={index}>{observation}</p>)}
@@ -256,10 +242,10 @@ export default function EventTrace({
         )}
       </div>
       <footer>
-        <span className="status-dot" />
-        {room ? "Demo workspace" : "This session"}
+        <span className={`status-dot ${room === 2 ? "inactive" : ""}`} />
+        {room === 2 ? "Live camera" : room ? "Demo workspace" : "This session"}
         <span>
-          {state.session.calls_armed ? "Calls armed" : "Calls simulated"}
+          {room === 2 ? "No signal" : state.session.calls_armed ? "Calls armed" : "Calls simulated"}
         </span>
       </footer>
     </aside>

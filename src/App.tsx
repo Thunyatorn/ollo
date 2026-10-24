@@ -1,3 +1,4 @@
+import Navbar from "./Navbar";
 import { useEffect, useRef, useState } from "react";
 import {
   Activity,
@@ -16,7 +17,6 @@ import {
   History,
   Keyboard,
   LockKeyhole,
-  LogOut,
   Maximize2,
   Pause,
   Phone,
@@ -24,7 +24,6 @@ import {
   Plus,
   RotateCcw,
   ScanLine,
-  Settings2,
   Shield,
   Upload,
   Video,
@@ -37,6 +36,8 @@ import {
 import type { LookoutState } from "./types";
 import { initialState, request } from "./api";
 import EventTrace from "./EventTrace";
+import ResizableWorkspace from "./ResizableWorkspace";
+import LiveCameraPlaceholder from "./LiveCameraPlaceholder";
 import CameraPicker from "./CameraPicker";
 import { demoIncidents } from "./demoIncidents";
 import FullscreenControls from "./FullscreenControls";
@@ -134,6 +135,7 @@ const rooms = [
     alt: "AI-generated CCTV-style gas station aisle with one adult browsing snacks",
     tracks: [{ x: 44.5, y: 19, w: 12, h: 48 }],
   },
+  { name: "Live camera", id: "CAM 03", image: "", alt: "", tracks: [] },
 ];
 function DemoScene({ room, zones }: { room: number; zones: boolean }) {
   const camera = rooms[room];
@@ -175,9 +177,8 @@ export default function App() {
   const [reviewDate, setReviewDate] = useState<string | null>(null);
   const [state, setState] = useState<LookoutState>(initialState),
     [connected, setConnected] = useState(false),
-    [page, setPage] = useState("monitor"),
+    [page, setPage] = useState(() => { const requested = new URLSearchParams(window.location.search).get("page"); return requested === "history" || requested === "settings" ? requested : "monitor"; }),
     [room, setRoom] = useState(0),
-    [selectedIncident, setSelectedIncident] = useState<string | null>(null),
     [playing, setPlaying] = useState(true),
     [zones, setZones] = useState(true),
     [source, setSource] = useState(""),
@@ -244,9 +245,7 @@ export default function App() {
   const playheadIncidentId = timelineMarkers.find(marker =>
     marker.endTime !== undefined && position >= marker.time && position <= marker.endTime
   )?.id;
-  useEffect(() => {
-    setSelectedIncident(playheadIncidentId || "collapsed");
-  }, [position, playheadIncidentId, room, reviewDate, sourceType]);
+  const selectedIncident = playheadIncidentId || null;
   const active = state.incidents.find(
     (i) => i.status === "open" || i.status === "acknowledged",
   );
@@ -457,7 +456,7 @@ export default function App() {
     };
   }, [signedOut]);
   useEffect(() => {
-    if (!playing || source) return;
+    if (!playing || source || room === 2) return;
     let previous = performance.now();
     const id = setInterval(() => {
       const now = performance.now();
@@ -466,7 +465,7 @@ export default function App() {
       setPosition(p => (p + elapsed) % (Number.isFinite(duration) && duration > 0 ? duration : 120));
     }, 100);
     return () => clearInterval(id);
-  }, [playing, source, duration]);
+  }, [playing, source, duration, room]);
   useEffect(() => {
     if (!source && sourceType !== "webcam") return;
     // One reused canvas; skip a tick while the previous upload is in flight so slow
@@ -824,6 +823,7 @@ export default function App() {
     setBusy(false);
   }
   async function togglePlay() {
+    if (room === 2) return;
     const next = !playing;
     setPlaying(next);
     if (video.current) {
@@ -840,6 +840,7 @@ export default function App() {
     }
   }
   function seekPlayback(seconds: number) {
+    if (room === 2) return;
     setPlaying(false);
     setPosition(seconds);
     if (video.current) {
@@ -891,10 +892,7 @@ export default function App() {
     const incident = state.incidents.find((i) => i.id === mobileId);
     return (
       <div className="mobile-response">
-        <div className="brand">
-          <Eye size={25} />
-          NestWatch<span className="beta">CAREGIVER</span>
-        </div>
+        <Navbar accountName={state.caregivers[0]?.name || "Local operator"} connected={connected} notifications={state.incidents} />
         <div className="mobile-response-card">
           <span className="eyebrow">CAREGIVER RESPONSE</span>
           <div className="mobile-icon">
@@ -996,40 +994,31 @@ export default function App() {
   return (
     <div className={`app-shell ${page === "monitor" ? "editor-workspace" : ""}`}>
       <main className="main">
-        <header className="topbar">
-          <button
-            className="brand compact-brand"
-            onClick={() => setPage("monitor")}
-            aria-label="NestWatch monitor"
-          >
-            <Eye size={23} strokeWidth={1.6} />
-            NestWatch
-          </button>
-          <div className="account-area">
-            {page !== "monitor" && <button className="button" onClick={() => setPage("monitor")}><Video size={14} />Monitor</button>}
-            <details className="account-menu" onKeyDown={e => { if (e.key === "Escape") { e.currentTarget.removeAttribute("open"); e.currentTarget.querySelector("summary")?.focus(); } }} onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) e.currentTarget.removeAttribute("open"); }}>
-              <summary aria-label="Account menu"><img src="/profile-avatar.svg" alt="Account profile" /><ChevronDown size={12} /></summary>
-              <div className="account-dropdown">
-                <div className="account-identity"><img src="/profile-avatar.svg" alt="" /><div><strong>{state.caregivers[0]?.name || "Local operator"}</strong><span>Local workspace</span></div></div>
-                <div className="account-connection"><span className={`status-dot ${connected ? "" : "red"}`} />{connected ? "System connected" : "Local demo"}</div>
-                <button onClick={e => { setPage("settings"); e.currentTarget.closest("details")?.removeAttribute("open"); }}><Settings2 size={15} />Settings</button>
-                <button onClick={e => { setPage("history"); e.currentTarget.closest("details")?.removeAttribute("open"); }}><History size={15} />Incident history</button>
-                <button className="account-signout" onClick={() => { sessionStorage.setItem("nestwatch-workspace-closed", "true"); setPlaying(false); video.current?.pause(); setSource(""); setSourceType("illustration"); setAnalysisReady(false); setSignedOut(true); }}><LogOut size={15} />Sign out</button>
-              </div>
-            </details>
-          </div>
-        </header>
+        <Navbar
+          accountName={state.caregivers[0]?.name || "Local operator"}
+          connected={connected}
+          notifications={state.incidents}
+          onNavigate={setPage}
+          onSignOut={() => {
+            sessionStorage.setItem("nestwatch-workspace-closed", "true");
+            setPlaying(false);
+            video.current?.pause();
+            setSource("");
+            setSourceType("illustration");
+            setAnalysisReady(false);
+            setSignedOut(true);
+          }}
+        />
         {page === "monitor" ? (
           <>
 
-            <section className="monitor-grid">
+            <ResizableWorkspace>
               <div className="monitor-column">
                 <div className={`camera-layout layout-${cameraLayout}`}>
                 <div className="camera-card">
                   <div className="camera-toolbar">
                     <div>
-                      <Video size={16} />
-                      <CameraPicker rooms={rooms} selected={room} onSelect={index => { setRoom(index); setSelectedIncident(null); }} />
+                      <CameraPicker rooms={rooms} selected={room} onSelect={index => { setRoom(index); }} />
                     </div>
                     <div>
                       {room === 0 && sourceType !== "illustration" && (
@@ -1062,7 +1051,7 @@ export default function App() {
                     className={`camera-stage ${state.camera.health === "offline" ? "offline" : ""}`}
                     ref={stage}
                   >
-                    {room === 0 ? (
+                    {room === 2 ? <LiveCameraPlaceholder /> : room === 0 ? (
                       <>
                         {source || sourceType === "webcam" ? (
                           <video
@@ -1671,17 +1660,17 @@ export default function App() {
                         <div className="camera-shade" />
                       </>
                     )}
-                    <FullscreenControls stage={stage} position={position} duration={duration} playing={playing} muted={muted} onToggle={() => { void togglePlay(); }} onMute={() => setMuted(m => !m)} onSeek={seekPlayback} />
+                    {room !== 2 && <FullscreenControls stage={stage} position={position} duration={duration} playing={playing} muted={muted} onToggle={() => { void togglePlay(); }} onMute={() => setMuted(m => !m)} onSeek={seekPlayback} />}
                   </div>
 
                 </div>
                 {cameraLayout !== "single" && <div className="additional-cameras">
-                  {rooms.map((camera, index) => index !== room && <button className="camera-preview-card" key={camera.id} onClick={() => { setRoom(index); setSelectedIncident(null); }} aria-label={`Focus ${camera.name}`}>
+                  {rooms.map((camera, index) => index !== room && <button className="camera-preview-card" key={camera.id} onClick={() => { setRoom(index); }} aria-label={`Focus ${camera.name}`}>
                     <div className="preview-card-header"><span><Video size={14} />{camera.name}</span><small>{camera.id}</small></div>
-                    <div className="preview-card-scene">{index === 0 && sourceType !== "illustration" ? serverFrame && sourceType === "server" ? <img src={serverFrame} alt="Current server camera preview" /> : <div className="preview-source-placeholder"><Video size={24} /><span>{sourceType === "webcam" ? "Webcam connected" : "Video source connected"}</span><small>Select to view and control</small></div> : <DemoScene room={index} zones={zones} />}</div>
-                    <div className="preview-card-footer"><span>{index === 0 && sourceType !== "illustration" ? "Connected source" : "Illustrative demo · not a live feed"}</span><Maximize2 size={12} /></div>
+                    <div className="preview-card-scene">{index === 2 ? <LiveCameraPlaceholder /> : index === 0 && sourceType !== "illustration" ? serverFrame && sourceType === "server" ? <img src={serverFrame} alt="Current server camera preview" /> : <div className="preview-source-placeholder"><Video size={24} /><span>{sourceType === "webcam" ? "Webcam connected" : "Video source connected"}</span><small>Select to view and control</small></div> : <DemoScene room={index} zones={zones} />}</div>
+                    <div className="preview-card-footer"><span>{index === 2 ? "Live feed · not connected" : index === 0 && sourceType !== "illustration" ? "Connected source" : "Illustrative demo · not a live feed"}</span><Maximize2 size={12} /></div>
                   </button>)}
-                  {cameraLayout === "grid" ? <><div className="empty-camera-slot" aria-label="Empty camera slot 3" /><div className="empty-camera-slot" aria-label="Empty camera slot 4" /></> : <button className="add-camera-tile" onClick={() => { setCameraMessage(""); setSourceOpen(true); }}><Plus size={20} /><strong>Connect a camera</strong><span>RTSP or HTTP stream</span><small>One analyzed source at a time</small></button>}
+                  {cameraLayout === "grid" ? <div className="empty-camera-slot" aria-label="Empty camera slot 4" /> : <button className="add-camera-tile" onClick={() => { setCameraMessage(""); setSourceOpen(true); }}><Plus size={20} /><strong>Connect a camera</strong><span>RTSP or HTTP stream</span><small>One analyzed source at a time</small></button>}
                 </div>}
                 </div>
 
@@ -1692,7 +1681,6 @@ export default function App() {
                 state={traceState}
                 room={room}
                 selected={selectedIncident}
-                onSelect={setSelectedIncident}
                 onAction={action}
                 onSeek={(time) => {
                   setPlaying(false);
@@ -1725,6 +1713,7 @@ export default function App() {
                             playing ? "Pause playback" : "Play playback"
                           }
                           onClick={togglePlay}
+                          disabled={room === 2}
                           title="Play / pause (Space)"
                           aria-keyshortcuts="Space"
                         >
@@ -1735,7 +1724,7 @@ export default function App() {
                           )}
                         </button>
                         <span className="timecode">
-                          {stamp(position)} <span>/ {stamp(duration)}</span>
+                          {room === 2 ? "LIVE / NOT CONNECTED" : <>{stamp(position)} <span>/ {stamp(duration)}</span></>}
                         </span>
                       </div>
                       <div>
@@ -1751,11 +1740,12 @@ export default function App() {
                             ].map(([label, keys]) => <div key={label}><span>{label}</span><kbd>{keys}</kbd></div>)}
                           </div>
                         </details>
-                        <span className="speed">1×</span>
+                        {room !== 2 && <span className="speed">1×</span>}
                         <button
                           className="icon-button"
                           aria-label={muted ? "Unmute video" : "Mute video"}
                           onClick={() => setMuted(!muted)}
+                          disabled={room === 2}
                           title="Mute / unmute (M)"
                           aria-keyshortcuts="M"
                         >
@@ -1772,25 +1762,26 @@ export default function App() {
                       room={room}
                       duration={duration}
                       position={position}
-                      playing={playing}
-                      demo={room !== 0 || sourceType === "illustration"}
+                      playing={room === 2 ? false : playing}
+                      liveDisconnected={room === 2}
+                      demo={room !== 2 && (room !== 0 || sourceType === "illustration")}
                       peaks={audioPeaks}
                       video={video}
                       selectedId={selectedIncident}
 
                       markers={timelineMarkers}
                       onSeek={(seconds, marker?: TimelineMarker) => {
+                        if (room === 2) return;
                         setPlaying(false);
                         setPosition(seconds);
                         if (video.current) {
                           video.current.pause();
                           video.current.currentTime = seconds;
                         }
-                        setSelectedIncident(marker ? marker.id : "collapsed");
                       }}
                     />
                   </div>
-            </section>
+            </ResizableWorkspace>
           </>
         ) : page === "history" ? (
           <section className="secondary-page">
