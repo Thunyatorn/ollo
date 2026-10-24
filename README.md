@@ -67,6 +67,12 @@ cd vision
 ```
 The label format is in the script's header (same as the team's evaluator, plus optional calibration, zones and adult tags per clip).
 
+## Demo room (no camera needed)
+
+`vision/scripts/make_demo_room.py` builds a 37-second video from the GMDCSA24 dataset (one person moving about, then a
+fall). Run it as the camera: `python -m nestwatch_vision.main out/demo_room.mp4 --realtime --demo-map`. The dashboard shows
+the person moving, and a fall alert near the end.
+
 ## Phone as the camera
 
 `python -m nestwatch_vision.main phone` makes the laptop wait for a phone's browser to send its camera over the local Wi-Fi. Steps and limits are in `docs/PHONE_CAMERA.md`.
