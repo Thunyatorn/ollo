@@ -27,8 +27,6 @@ import {
   Shield,
   Upload,
   Video,
-  Volume2,
-  VolumeX,
   Webcam,
   WifiOff,
   X,
@@ -38,7 +36,8 @@ import { initialState, request } from "./api";
 import EventTrace from "./EventTrace";
 import ResizableWorkspace from "./ResizableWorkspace";
 import LiveCameraPlaceholder from "./LiveCameraPlaceholder";
-import CameraPicker from "./CameraPicker";
+import CameraSidebar from "./CameraSidebar";
+import PlaybackTime from "./PlaybackTime";
 import { demoIncidents } from "./demoIncidents";
 import FullscreenControls from "./FullscreenControls";
 import usePlaybackShortcuts from "./usePlaybackShortcuts";
@@ -173,12 +172,13 @@ export default function App() {
   const [signedOut, setSignedOut] = useState(() => sessionStorage.getItem("nestwatch-workspace-closed") === "true");
   const audioFile = useRef<File | null>(null);
   const [audioPeaks, setAudioPeaks] = useState<number[] | null>(null);
+  const [mainCamera, setMainCamera] = useState(() => { try { const saved = Number(localStorage.getItem("ollo-main-camera")); return Number.isInteger(saved) && saved >= 0 && saved < rooms.length ? saved : 0; } catch { return 0; } });
   const [cameraLayout, setCameraLayout] = useState<CameraLayout>("single");
   const [reviewDate, setReviewDate] = useState<string | null>(null);
   const [state, setState] = useState<LookoutState>(initialState),
     [connected, setConnected] = useState(false),
     [page, setPage] = useState(() => { const requested = new URLSearchParams(window.location.search).get("page"); return requested === "history" || requested === "settings" ? requested : "monitor"; }),
-    [room, setRoom] = useState(0),
+    [room, setRoom] = useState(mainCamera),
     [playing, setPlaying] = useState(true),
     [zones, setZones] = useState(true),
     [source, setSource] = useState(""),
@@ -1016,37 +1016,6 @@ export default function App() {
               <div className="monitor-column">
                 <div className={`camera-layout layout-${cameraLayout}`}>
                 <div className="camera-card">
-                  <div className="camera-toolbar">
-                    <div>
-                      <CameraPicker rooms={rooms} selected={room} onSelect={index => { setRoom(index); }} />
-                    </div>
-                    <div>
-                      {room === 0 && sourceType !== "illustration" && (
-                        <span className="record-label">
-                          <span />{" "}
-                          {sourceType === "webcam"
-                            ? "LIVE WEBCAM"
-                            : sourceType === "server"
-                              ? "SERVER CAMERA"
-                              : "RECORDED VIDEO"}
-                        </span>
-                      )}
-                      <button
-                        className={`icon-button ${zones ? "enabled" : ""}`}
-                        title="Toggle zone overlay"
-                        onClick={() => setZones(!zones)}
-                      >
-                        <Focus size={16} />
-                      </button>
-                      <button
-                        className="icon-button"
-                        title="Fullscreen"
-                        onClick={() => stage.current?.requestFullscreen?.()}
-                      >
-                        <Maximize2 size={16} />
-                      </button>
-                    </div>
-                  </div>
                   <div
                     className={`camera-stage ${state.camera.health === "offline" ? "offline" : ""}`}
                     ref={stage}
@@ -1660,6 +1629,10 @@ export default function App() {
                         <div className="camera-shade" />
                       </>
                     )}
+                    <div className="camera-floating-actions" aria-label="Camera controls">
+                      <button className={`icon-button ${zones ? "enabled" : ""}`} aria-label="Toggle zone overlay" aria-pressed={zones} title="Toggle zone overlay" onClick={() => setZones(!zones)}><Focus size={14} /></button>
+                      <button className="icon-button" aria-label="Fullscreen camera" title="Fullscreen" onClick={() => stage.current?.requestFullscreen?.()}><Maximize2 size={14} /></button>
+                    </div>
                     {room !== 2 && <FullscreenControls stage={stage} position={position} duration={duration} playing={playing} muted={muted} onToggle={() => { void togglePlay(); }} onMute={() => setMuted(m => !m)} onSeek={seekPlayback} />}
                   </div>
 
@@ -1676,7 +1649,13 @@ export default function App() {
 
               </div>
               <div className="monitor-side-panel">
+                <details className="sidebar-section" open><summary>Date & view<ChevronDown size={13} /></summary>
                 <MonitoringControls date={reviewDate} onDate={setReviewDate} layout={cameraLayout} onLayout={setCameraLayout} eventDates={new Set((room !== 0 || sourceType === "illustration" ? mockIncidents : state.incidents).map(i => incidentDate(i.opened_at)))} />
+                </details>
+                <details className="sidebar-section" open><summary>Cameras<ChevronDown size={13} /></summary>
+                  <CameraSidebar rooms={rooms} selected={room} main={mainCamera} onSelect={setRoom} onMain={index => { setMainCamera(index); setRoom(index); try { localStorage.setItem("ollo-main-camera", String(index)); } catch { /* Keep selection available without storage. */ } }} />
+                </details>
+                <details className="sidebar-section sidebar-events" open><summary>Event trace<span>{traceState.incidents.length.toString().padStart(2, "0")}</span><ChevronDown size={13} /></summary>
               <EventTrace
                 state={traceState}
                 room={room}
@@ -1703,6 +1682,7 @@ export default function App() {
                   }
                 }}
               />
+                </details>
               </div>
                   <div className="playback">
                     <div className="playback-top">
@@ -1723,11 +1703,10 @@ export default function App() {
                             <Play size={16} fill="currentColor" />
                           )}
                         </button>
-                        <span className="timecode">
-                          {room === 2 ? "LIVE / NOT CONNECTED" : <>{stamp(position)} <span>/ {stamp(duration)}</span></>}
-                        </span>
+                        <PlaybackTime position={position} duration={duration} disabled={room === 2} onSeek={seekPlayback} />
+                        {room !== 2 && <span className="speed">1×</span>}
                       </div>
-                      <div>
+                      <div className="playback-tools">
                         <details className="shortcut-help">
                           <summary aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)"><Keyboard size={15} /></summary>
                           <div className="shortcut-popover" role="region" aria-label="Keyboard shortcuts">
@@ -1740,21 +1719,7 @@ export default function App() {
                             ].map(([label, keys]) => <div key={label}><span>{label}</span><kbd>{keys}</kbd></div>)}
                           </div>
                         </details>
-                        {room !== 2 && <span className="speed">1×</span>}
-                        <button
-                          className="icon-button"
-                          aria-label={muted ? "Unmute video" : "Mute video"}
-                          onClick={() => setMuted(!muted)}
-                          disabled={room === 2}
-                          title="Mute / unmute (M)"
-                          aria-keyshortcuts="M"
-                        >
-                          {muted ? (
-                            <VolumeX size={15} />
-                          ) : (
-                            <Volume2 size={15} />
-                          )}
-                        </button>
+
                       </div>
                     </div>
                     <EditorTimeline

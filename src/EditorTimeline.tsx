@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, type RefObject } from "react";
-import { AudioLines, Video } from "lucide-react";
+import { AudioLines, TriangleAlert, Video } from "lucide-react";
 
 export type TimelineMarker = { id: string; time: number; endTime?: number; title: string; demo?: boolean };
 const timecode = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
@@ -79,9 +79,9 @@ export default function EditorTimeline({ camera, room, duration, position, playi
         const end = marker.endTime !== undefined && marker.endTime > marker.time ? Math.min(marker.endTime, safeDuration) : null;
         const selected = selection === marker.id;
         return <div className="editor-incident" key={marker.id} aria-hidden="true">
-          {end !== null && <div className={`editor-incident-range ${selected ? "selected" : ""}`} style={{ left: `${marker.time / safeDuration * 100}%`, width: `${(end - marker.time) / safeDuration * 100}%` }} />}
-          <div className={`editor-incident-marker ${selected ? "selected" : ""}`} style={{ left: `${marker.time / safeDuration * 100}%` }} title={`${timecode(marker.time)} · ${marker.title} · Start`}><span /></div>
-          {end !== null && <div className={`editor-incident-marker end-marker ${selected ? "selected" : ""}`} style={{ left: `${end / safeDuration * 100}%` }} title={`${timecode(end)} · ${marker.title} · Resolved`}><span /></div>}
+          {end !== null && <div className={`editor-incident-range ${selected ? "selected" : ""}`} style={{ left: `calc(${marker.time / safeDuration * 100}% + 11px)`, width: `max(0px, calc(${(end - marker.time) / safeDuration * 100}% - 22px))` }} />}
+          <div className={`editor-incident-marker ${selected ? "selected" : ""}`} style={{ left: `${marker.time / safeDuration * 100}%` }} title={`${timecode(marker.time)} · ${marker.title} · Start`}><TriangleAlert size={14} strokeWidth={2} /></div>
+          {end !== null && <div className={`editor-incident-marker end-marker ${selected ? "selected" : ""}`} style={{ left: `${end / safeDuration * 100}%` }} title={`${timecode(end)} · ${marker.title} · Resolved`}><TriangleAlert size={14} strokeWidth={2} /></div>}
         </div>;
       })}
     </div>

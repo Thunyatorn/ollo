@@ -241,13 +241,7 @@ export default function EventTrace({
           })
         )}
       </div>
-      <footer>
-        <span className={`status-dot ${room === 2 ? "inactive" : ""}`} />
-        {room === 2 ? "Live camera" : room ? "Demo workspace" : "This session"}
-        <span>
-          {room === 2 ? "No signal" : state.session.calls_armed ? "Calls armed" : "Calls simulated"}
-        </span>
-      </footer>
+
     </aside>
   );
 }
