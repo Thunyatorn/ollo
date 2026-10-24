@@ -37,6 +37,7 @@ class FallEvent:
     track: int
     t: float
     box: np.ndarray
+    info: dict = field(default_factory=dict)      # measurements at the moment it fired (for analysis; not used by the rule)
 
 
 @dataclass
@@ -65,6 +66,22 @@ def _torso_angle(kpts, floor=0.3):
     sx, sy = np.mean([p[0] for p in s]), np.mean([p[1] for p in s])
     hx, hy = np.mean([p[0] for p in h]), np.mean([p[1] for p in h])
     return math.degrees(math.atan2(abs(hx - sx), max(hy - sy, 1e-6))) if hy > sy else 90.0 + math.degrees(math.atan2(sy - hy, abs(hx - sx) + 1e-6))
+
+
+def _measure(tr, p, t, h, w, H, angle) -> dict:
+    """Body measurements at the moment of an alert, for analysis (the rule does not read them)."""
+    k, y2 = p.kpts, float(p.box[3])
+    ok = lambda ids, floor=0.3: [float(k[i, 1]) for i in ids if k[i, 2] >= floor]
+    hips, nose, ankles = ok((L_HIP, R_HIP)), ok((0,)), ok((15, 16))
+    hist = [(tt, top) for tt, top, _ in tr.hist if t - 3.0 <= tt <= t]
+    speed = max([(b[1] - a[1]) / H / (b[0] - a[0]) for i, a in enumerate(hist) for b in hist[i + 1:] if b[0] - a[0] >= 0.25] or [0.0])
+    tops = [top for _, top in hist]
+    return {"h_ratio": h / H, "aspect": w / h, "angle": angle, "since_low": t - tr.low_since, "drop_lag": t - tr.drop_at,
+            "peak_speed": speed,                                                          # fastest downward move of the top, standing heights per second
+            "drop_total": (tops[-1] - min(tops)) / H if tops else 0.0,                    # how far the top fell in the last 3 s
+            "hip_rel": (y2 - np.mean(hips)) / h if hips else None,                       # hip height above the box bottom, in box heights
+            "head_rel": (y2 - nose[0]) / h if nose else None,                             # head height above the box bottom
+            "kpt_conf": float(np.mean(k[:, 2])), "ankle_vis": float(np.mean(k[15:17, 2])), "box_conf": float(p.box_conf)}
 
 
 def _iou(a, b):
@@ -130,6 +147,6 @@ class FallDetector:
             if (tr.low_since is not None and t - tr.low_since >= c.hold_s and tr.low_since - c.recent_drop_s <= tr.drop_at <= t
                     and t - tr.fired_at > c.refractory_s):
                 tr.fired_at = t
-                events.append(FallEvent(tr.id, t, p.box))
+                events.append(FallEvent(tr.id, t, p.box, _measure(tr, p, t, h, w, H, angle)))
         self.tracks = [tr for tr in self.tracks if t - tr.last_t <= c.max_gap_s]
         return events

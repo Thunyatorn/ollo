@@ -980,3 +980,39 @@ The team's detector on the same clips (their evaluator, their scoring): 15/50 ca
 (precision 62%, 43-79%) on 8/50 everyday clips, mean delay 3.0 s. Ours catches more than twice as many falls; its
 false-alarm rate is a little higher (12/50 vs 8/50 everyday clips, intervals overlap).
 Rebuild: `scripts/make_caucafall_labels.py`, `scripts/cache_poses.py`, `BENCH_DATA=.../omnifall_caucafall scripts/bench_falls.py`.
+
+### 8.1b Trying to cut false alarms (2026-10-24)
+
+Question: can the fall rule keep catching falls and stop alarming on kneeling, picking things up and sitting down?
+Data: both OmniFall datasets pooled (260 clips). Tuning people: GMDCSA24 Subjects 1-3 and CAUCAFall Subjects 1-7 and 10
+(102 falls). Test people, never used to choose: GMDCSA24 Subject 4 and CAUCAFall Subjects 8-9 (26 falls).
+
+What separates true alerts (102) from false ones (23): measured at each alert, ranked by how consistently they separate
+the two across both datasets.
+
+| Measurement | Separates? | Note |
+| --- | --- | --- |
+| aspect (width / height) | partly (0.78, 0.69) | true falls end wide, median 1.84 vs 0.81 |
+| height ratio | partly | true median 0.44 vs 0.61 |
+| speed of the drop | partly (0.64, 0.79) | true median 1.10 vs 0.78 standing heights per second |
+| torso angle, time spent low | no | forward falls and bending to pick something up both give inverted torsos |
+| head position | one dataset only | 0.06 on GMDCSA24, 0.62 (reversed) on CAUCAFall |
+
+Search: 648 settings of the existing knobs, now including the torso-angle threshold, ranked by the worst tuning person's F1.
+The best setting ties the current defaults on the tuning people (F1 0.83 both; 86 caught / 20 false vs 84 / 16). On the
+test people it caught 22 of 26 against 18 of 26 (85% vs 69%; 66-94% vs 50-83%) with 8 false alarms against 7: a gain of four
+clips, inside the noise. Not adopted.
+
+Speed gate (alert only if the drop was at least X standing heights per second), tuning people / test people:
+
+| X | caught (tune) | false (tune) | caught (test) | false (test) |
+| --- | --- | --- | --- | --- |
+| 0 (now) | 84/102 | 16 | 18/26 | 7 |
+| 0.7 | 73 | 11 | 16 | 4 |
+| 0.8 | 66 | 9 | 15 | 2 |
+| 1.0 | 51 | 4 | 11 | 1 |
+
+False alarms fall about as fast as catches do, so F1 never improves. Conclusion: with one camera and the signals above,
+fewer false alarms costs real falls; the choice is an operating point, not a fix. A real improvement needs something new
+(for example a classifier trained on pose sequences from far more labelled falls, or a second look from Claude).
+Tools: `scripts/analyze_falls.py` (measurements per alert), `scripts/tune_falls.py` (the search with held-out people).
