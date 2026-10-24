@@ -719,6 +719,15 @@ export const escalateDue = spacetimedb.reducer(ctx => {
   }
 });
 
+// Admin only: escalate one alert right now instead of waiting for its timer (drills and test calls).
+export const escalateNow = spacetimedb.reducer({ alertId: t.string() }, (ctx, { alertId }) => {
+  requireRole(ctx, 'admin');
+  const a = ctx.db.alert.id.find(alertId);
+  if (!a) throw new SenderError('alert not found');
+  cancelTimers(ctx, alertId);
+  runEscalation(ctx, alertId, a.escalationLevel);
+});
+
 // Scheduled by Spacetime itself. Clients cannot call it.
 export const escalationTick = spacetimedb.reducer(
   { onSchedule: escalationTimer },

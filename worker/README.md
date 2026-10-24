@@ -40,6 +40,10 @@ SIM_CALL_OUTCOME=press1 SIM_RING_S=3 .venv/bin/python -m nestwatch_worker.main &
 .venv/bin/python scripts/flows.py opinion               # flow 4: medium alert with key frames
 ```
 
+`scripts/test_call.py` places ONE real call to the on-duty backup caregiver (it asks for Enter first). It escalates the test alert
+at once, so the phone rings within a few seconds; `--wait-timer` waits the full 20 s timer instead. The fast path uses the
+admin-only `escalate_now` reducer, run with the `spacetime` command line tool as the admin identity.
+
 `flows.py call-failure` needs the worker started with `SIM_CALL_OUTCOME=error`.
 
 ## Real calls

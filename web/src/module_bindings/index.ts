@@ -42,6 +42,7 @@ import CloseAlertReducer from "./close_alert_reducer";
 import ConfirmZoneReducer from "./confirm_zone_reducer";
 import CreateZoneReducer from "./create_zone_reducer";
 import EscalateDueReducer from "./escalate_due_reducer";
+import EscalateNowReducer from "./escalate_now_reducer";
 import GrantRoleReducer from "./grant_role_reducer";
 import ReportEventReducer from "./report_event_reducer";
 import SaveRecallMatchReducer from "./save_recall_match_reducer";
@@ -254,6 +255,7 @@ const reducersSchema = __reducers(
   __reducerSchema("confirm_zone", ConfirmZoneReducer),
   __reducerSchema("create_zone", CreateZoneReducer),
   __reducerSchema("escalate_due", EscalateDueReducer),
+  __reducerSchema("escalate_now", EscalateNowReducer),
   __reducerSchema("grant_role", GrantRoleReducer),
   __reducerSchema("report_event", ReportEventReducer),
   __reducerSchema("save_recall_match", SaveRecallMatchReducer),
