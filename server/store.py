@@ -21,12 +21,55 @@ KINDS = {
 }
 
 
+class Rows(list):
+    """Rows already read from SQLite, with the cursor methods callers use."""
+    def fetchone(self):
+        return self[0] if self else None
+
+    def fetchall(self):
+        return list(self)
+
+
+class LockedConnection:
+    """The one shared connection, used by the event loop, frame processing and API worker threads.
+    Every statement and every `with db:` transaction holds the store lock, and rows are read before it is released."""
+    def __init__(self, connection, lock):
+        self.connection, self.lock = connection, lock
+
+    def execute(self, sql, parameters=()):
+        with self.lock:
+            return Rows(self.connection.execute(sql, parameters).fetchall())
+
+    def executescript(self, script):
+        with self.lock:
+            self.connection.executescript(script)
+
+    def commit(self):
+        with self.lock:
+            self.connection.commit()
+
+    def __enter__(self):
+        self.lock.acquire()
+        try:
+            self.connection.__enter__()
+        except BaseException:
+            self.lock.release(); raise
+        return self
+
+    def __exit__(self, *exc):
+        try:
+            return self.connection.__exit__(*exc)
+        finally:
+            self.lock.release()
+
+
 class Store:
     def __init__(self, path):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
-        self.db = sqlite3.connect(str(path), check_same_thread=False)
-        self.db.row_factory = sqlite3.Row
+        connection = sqlite3.connect(str(path), check_same_thread=False)
+        connection.row_factory = sqlite3.Row
+        self.db = LockedConnection(connection, self.lock)
         self.db.executescript('''PRAGMA journal_mode=WAL;
         CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY,value TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS incidents (id TEXT PRIMARY KEY,session_id TEXT,epoch INTEGER,kind TEXT,status TEXT,payload TEXT,opened REAL);

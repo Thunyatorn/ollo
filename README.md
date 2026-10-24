@@ -14,7 +14,7 @@ Connect the full loop from **CCTV feed → real-time event analysis → notifica
 
 **Current prototype:** compatible camera-stream ingestion, local event analysis, dashboard alerts, caregiver call integrations, and incident records are implemented. Real provider calls require credentials and explicit session arming; calls otherwise remain simulated. External notification delivery and 911 calling are product goals, not implemented capabilities. Emergency-service integration and its escalation policy still need to be designed and validated; hackathon calls target consenting teammates only. Video observations are safety signals, not medical diagnoses.
 
-Built for Cal Hacks 13.0. [docs/SPEC.md](docs/SPEC.md) is the source of truth: requirements with IDs, acceptance criteria, the tests that verify each one, and the build plan. `server/tests/test_spec.py` fails the suite if the spec and tests disagree. Background research is in the [implementation specification](docs/IMPLEMENTATION_SPEC.md), and measured changes are in the [improvement log](docs/IMPROVEMENT_LOG.md).
+Built for Cal Hacks 13.0. [docs/SPEC.md](docs/SPEC.md) is the source of truth: requirements with IDs, acceptance criteria, the tests that verify each one, and the build plan. `server/tests/test_spec.py` fails the suite if the spec and tests disagree. Background research is in the [implementation specification](docs/IMPLEMENTATION_SPEC.md), measured changes are in the [improvement log](docs/IMPROVEMENT_LOG.md), and the math behind every rule and optimization is explained in [docs/MATH.md](docs/MATH.md).
 
 ## Spacetime edition (a second build in this repository)
 
