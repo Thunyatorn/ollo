@@ -208,6 +208,11 @@ Development is spec-first. Every behavior has a requirement with a stable ID, te
 - **Acceptance:** Every incident kind (`boundary`, `distress`, `fall`, `rhythmic`, `stillness`) has one title, one spoken phrase, and its own limitations (for example "Injury cannot be determined from video"). They come from `KINDS` and are shown on the incident.
 - **Verify:** `test_coordinator.py::test_every_kind_has_title_phrase_and_limitations`, `test_events.py::test_engine_turns_local_rule_into_observation`
 
+#### ALR-6 · Records stay readable while they are written
+- **Status:** Done
+- **Acceptance:** The dashboard's `/api/state` reads incidents, events, call attempts and settings in a worker thread while the coordinator and frame processing write in other threads. Reads and writes from several threads at once never raise and never return a half-read row. Each read returns a consistent snapshot.
+- **Verify:** `test_store.py::test_concurrent_reads_and_writes_never_fail`
+
 ### Escalation calls
 
 #### ESC-1 · Simulation unless explicitly armed
@@ -230,6 +235,28 @@ Development is spec-first. Every behavior has a requirement with a stable ID, te
   - Pressing 1 acknowledges as that caregiver; pressing 2 declines.
   - The call message is generated with Cartesia voice.
 - **Verify:** `test_api.py::test_signed_callbacks_order_and_answer_is_not_ack`
+
+#### ESC-4 · Keypad call on a Twilio trial account
+- **Status:** Done
+- **Why:** Twilio trial accounts reject inline TwiML and status callbacks ("limited parameter access", 400) and send webhooks without a signature. Found by the team's real test calls; the ESC-2 call never got through on a trial account.
+- **Acceptance:**
+  - **Call creation.** `POST /2010-04-01/Accounts/{sid}/Calls.json` sends only `To`, `From` and `Url` = `{PUBLIC_CALLBACK_BASE_URL}/webhooks/twilio/voice/{call_token}`, where `call_token` is fresh and random per call. A paid account (account `type` not `Trial`, checked once and cached; unknown counts as trial) also gets `Timeout`, `StatusCallback` and its events.
+  - **Instructions.** `POST /webhooks/twilio/voice/{call_token}` returns the TwiML: play the Cartesia audio, gather one digit with action `/webhooks/twilio/digits/{call_token}`, then hang up. An unknown or expired token → 404.
+  - **Webhook trust.** A request carrying `X-Twilio-Signature` must have a valid signature. A request without one is accepted only when its token matches an attempt (only the token's SHA-256 is stored), the form's `AccountSid` is ours, and its `CallSid` is that attempt's call.
+  - **Keypad.** Through the token route, 1 acknowledges and 2 declines exactly as ESC-2.
+  - **Call progress without callbacks.** The server reads the call's status from Twilio every 2 s until it ends. Updates follow the same rules as the status webhook: never backwards, and a primary call that ends unacknowledged moves the backup call to now (ALR-4). A call still queued or ringing after 40 s is hung up.
+  - **Testing.** Mocked HTTP only; tests never place calls.
+- **Verify:** `test_twilio_trial.py::test_trial_call_sends_only_to_from_url`, `test_twilio_trial.py::test_voice_instructions_and_unsigned_keypad_need_token_account_and_call`, `test_twilio_trial.py::test_polled_status_moves_forward_and_expedites_backup`
+
+#### ESC-5 · The keypad call never waits for speech
+- **Status:** Done
+- **Why:** in the first real test (2026-10-24) the call was created 26 s after the alert instead of 8 s. Cartesia speech for the message took 3.0–9.3 s from the venue network, and the call waited for it. Twilio fetches the audio only after the phone is answered, so the wait bought nothing.
+- **Acceptance:**
+  - **Dial first.** Twilio call creation starts without waiting for Cartesia; the speech is generated at the same time.
+  - **Answered before the speech is ready.** `/webhooks/twilio/voice/{token}` waits up to 10 s for the speech, then plays it. If the speech failed or is still not ready, the instructions use Twilio's own `<Say>` with the same text, so the caregiver always hears the alert and can still press 1 or 2.
+  - **Reuse.** Speech is kept per message text; the same message never asks Cartesia twice.
+  - **Prepared on arming.** Arming real calls checks the Twilio account type and prepares the speech for every alert kind in the current room, in the background.
+- **Verify:** `test_call_speed.py::test_call_is_created_before_speech_is_ready`, `test_call_speed.py::test_answered_call_waits_for_speech_or_falls_back_to_say`, `test_call_speed.py::test_arming_prepares_speech_for_every_kind_once`
 
 #### ESC-3 · Spoken acknowledgment through a Cartesia voice agent
 - **Status:** Done
@@ -438,7 +465,7 @@ Development is spec-first. Every behavior has a requirement with a stable ID, te
 - `POST /api/video`
 - `POST /api/session/{start|pause|stop|reset}`
 - `POST /api/session/arm-calls`
-- `POST /webhooks/twilio/{status|digits}`
+- `POST /webhooks/twilio/{status|digits}`, and on trial accounts `POST /webhooks/twilio/{voice|digits}/{call_token}` (ESC-4)
 - `POST /api/calibration` and `DELETE /api/calibration` (DET-9).
 - `POST /webhooks/voice/ack` (ESC-3, called by the Cartesia agent's webhook tool).
 - `POST /api/landmarks`, `DELETE /api/landmarks/{id}`, `POST /api/rules/draft`, `POST /api/rules/{id}/confirm`, `DELETE /api/rules/{id}` (AI-6).

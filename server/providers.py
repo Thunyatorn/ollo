@@ -43,13 +43,64 @@ def ready():
     return (agent_ready() or twilio_ready()) if provider()=='cartesia_agent' else twilio_ready()
 
 
+def _twilio_url(path):
+    return 'https://api.twilio.com/2010-04-01/Accounts/'+os.environ['TWILIO_ACCOUNT_SID']+path
+
+
+def _twilio_auth():
+    return (os.environ['TWILIO_ACCOUNT_SID'],os.environ['TWILIO_AUTH_TOKEN'])
+
+
+def _twilio_reason(response):
+    """Twilio's own reason for a refusal (code and message), so the event log says what to fix."""
+    try:
+        body=response.json()
+        return f"Twilio {response.status_code} {body.get('code','')}: {body.get('message','')}"[:200]
+    except ValueError:
+        return f'Twilio {response.status_code}'
+
+
 def token_hash(token):
     return hashlib.sha256(token.encode()).hexdigest()
 
 
 class Calls:
     def __init__(self, data_dir):
-        self.audio={}; self.data_dir=data_dir
+        self.audio={}; self.data_dir=data_dir; self._trial=None
+        self.pending={}       # call token -> (expires, speech task, text): ESC-5, speech made while the phone rings
+        self.speech_cache={}  # message text -> Cartesia audio, so one message never asks Cartesia twice
+        self.speech_wait=10.0
+
+    def message(self, incident):
+        return 'This is a NestWatch alert for '+incident['room']+'. '+KINDS.get(incident['kind'],KINDS['boundary'])[1]+' Please check the room immediately. Press 1 to acknowledge, or 2 if you cannot respond.'
+
+    async def speech(self, text):
+        """Cartesia audio for a message, reused once made."""
+        if text in self.speech_cache:return self.speech_cache[text]
+        async with httpx.AsyncClient(timeout=20) as client:
+            response=await client.post('https://api.cartesia.ai/tts/bytes',headers={'Authorization':'Bearer '+os.environ['CARTESIA_API_KEY'],'Cartesia-Version':os.environ['CARTESIA_VERSION']},json={'model_id':os.environ['CARTESIA_MODEL_ID'],'transcript':text,'voice':os.environ['CARTESIA_VOICE_ID'],'output_format':{'container':'wav','encoding':'pcm_s16le','sample_rate':24000}})
+            response.raise_for_status()
+        self.speech_cache[text]=response.content
+        return response.content
+
+    async def prepare(self, room):
+        """ESC-5, on arming: learn the account type and make the speech for every alert kind, off the alert path."""
+        async with httpx.AsyncClient(timeout=15) as client:
+            await self._is_trial(client)
+        await asyncio.gather(*(self.speech(self.message({'room':room,'kind':kind})) for kind in KINDS),return_exceptions=True)
+
+    async def audio_for(self, token):
+        """The call's audio, waiting for speech still being made; None if unknown, expired or failed."""
+        entry=self.audio.get(token)
+        if entry and entry[0]>=time.time():return entry[1]
+        pending=self.pending.get(token)
+        if not pending or pending[0]<time.time():return None
+        try:
+            audio=await asyncio.wait_for(asyncio.shield(pending[1]),self.speech_wait)
+        except Exception:
+            return None
+        self.audio[token]=(pending[0],audio)
+        return audio
 
     async def place(self, incident, step, armed, still_authorized=None, caregiver=''):
         if not armed or not ready():
@@ -85,26 +136,57 @@ class Calls:
         return {'status':'initiated','mode':'real','provider':'cartesia_agent','agent_call_id':entry['agent_call_id'],'ack_token_sha256':token_hash(token),'phone_last4':destination[-4:]}
 
     async def _place_twilio(self, incident, step, destination, still_authorized=None):
+        """ESC-2/ESC-4/ESC-5: Twilio fetches the instructions from /webhooks/twilio/voice/<token>; Cartesia speech is made meanwhile.
+        Trial accounts refuse inline TwiML and status callbacks, so those are only sent on paid accounts."""
         base=os.environ['PUBLIC_CALLBACK_BASE_URL'].rstrip('/')
-        text='This is a NestWatch alert for '+incident['room']+'. '+KINDS.get(incident['kind'],KINDS['boundary'])[1]+' Please check the room immediately. Press 1 to acknowledge, or 2 if you cannot respond.'
+        text=self.message(incident);token=secrets.token_urlsafe(32)
+        # ESC-5: dial first. Twilio asks for the audio only once the phone is answered.
+        speech=asyncio.create_task(self.speech(text));speech.add_done_callback(lambda task:task.cancelled() or task.exception())
+        self.pending[token]=(time.time()+900,speech,text)
         async with httpx.AsyncClient(timeout=15) as client:
-            response=await client.post('https://api.cartesia.ai/tts/bytes',headers={'Authorization':'Bearer '+os.environ['CARTESIA_API_KEY'],'Cartesia-Version':os.environ['CARTESIA_VERSION']},json={'model_id':os.environ['CARTESIA_MODEL_ID'],'transcript':text,'voice':os.environ['CARTESIA_VOICE_ID'],'output_format':{'container':'wav','encoding':'pcm_s16le','sample_rate':24000}})
-            response.raise_for_status()
-        token=secrets.token_urlsafe(32); self.audio[token]=(time.time()+900,response.content)
-        twiml='<Response><Gather numDigits="1" timeout="8" action="'+escape(base+'/webhooks/twilio/digits')+'" method="POST"><Play>'+escape(base+'/call-media/'+token)+'</Play></Gather><Hangup/></Response>'
-        from twilio.rest import Client
-        def create():
-            return Client(os.environ['TWILIO_ACCOUNT_SID'],os.environ['TWILIO_AUTH_TOKEN']).calls.create(to=destination,from_=os.environ['TWILIO_FROM_NUMBER'],twiml=twiml,status_callback=base+'/webhooks/twilio/status',status_callback_event=['initiated','ringing','answered','completed'],timeout=15)
-        # A timeout is not retried: call creation may already have succeeded.
-        if still_authorized is not None and not still_authorized():
-            return {'status':'canceled','mode':'real','message':'Session changed before call creation.'}
-        result=await asyncio.wait_for(asyncio.to_thread(create),timeout=20)
-        return {'status':'initiated','mode':'real','provider':'twilio','call_sid':result.sid,'phone_last4':destination[-4:]}
+            form={'To':destination,'From':os.environ['TWILIO_FROM_NUMBER'],'Url':base+'/webhooks/twilio/voice/'+token}
+            if not await self._is_trial(client):
+                form.update({'Timeout':'15','StatusCallback':base+'/webhooks/twilio/status','StatusCallbackMethod':'POST','StatusCallbackEvent':['initiated','ringing','answered','completed']})
+            if still_authorized is not None and not still_authorized():
+                return {'status':'canceled','mode':'real','message':'Session changed before call creation.'}
+            # A timeout is not retried: call creation may already have succeeded.
+            created=await client.post(_twilio_url('/Calls.json'),data=form,auth=_twilio_auth())
+        if created.status_code>=400:
+            return {'status':'failed','mode':'real','provider':'twilio','message':_twilio_reason(created)}
+        return {'status':'initiated','mode':'real','provider':'twilio','call_sid':created.json()['sid'],'call_token_sha256':token_hash(token),'phone_last4':destination[-4:]}
+
+    async def _is_trial(self, client):
+        """Twilio account type, checked once. Unknown counts as trial, the stricter case."""
+        if self._trial is None:
+            try:
+                response=await client.get(_twilio_url('.json'),auth=_twilio_auth())
+            except httpx.HTTPError:
+                return True
+            self._trial=response.status_code!=200 or response.json().get('type','Trial')=='Trial'
+        return self._trial
+
+    async def twiml(self, token):
+        """The call instructions for /webhooks/twilio/voice/<token>, or None for an unknown or expired token.
+        If the Cartesia speech failed or is late, Twilio's own voice reads the same message (ESC-5)."""
+        known=[entry for entry in (self.audio.get(token),self.pending.get(token)) if entry and entry[0]>=time.time()]
+        if not known:return None
+        base=os.environ['PUBLIC_CALLBACK_BASE_URL'].rstrip('/')
+        spoken='<Play>'+escape(base+'/call-media/'+token)+'</Play>' if await self.audio_for(token) else '<Say>'+escape(self.pending[token][2])+'</Say>'
+        return '<?xml version="1.0" encoding="UTF-8"?><Response><Gather numDigits="1" timeout="8" action="'+escape(base+'/webhooks/twilio/digits/'+token)+'" method="POST">'+spoken+'</Gather><Hangup/></Response>'
+
+    async def call_status(self, sid):
+        """ESC-4: Twilio's status for a call we placed (no status callbacks on trial accounts), or None if unreadable."""
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                response=await client.get(_twilio_url('/Calls/'+sid+'.json'),auth=_twilio_auth())
+        except httpx.HTTPError:
+            return None
+        return response.json().get('status') if response.status_code==200 else None
 
     async def cancel(self, sid):
         if not sid or not os.getenv('TWILIO_AUTH_TOKEN'):return
-        from twilio.rest import Client
-        await asyncio.to_thread(lambda:Client(os.environ['TWILIO_ACCOUNT_SID'],os.environ['TWILIO_AUTH_TOKEN']).calls(sid).update(status='completed'))
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(_twilio_url('/Calls/'+sid+'.json'),data={'Status':'completed'},auth=_twilio_auth())
 
     def valid_signature(self, url, form, signature):
         if not os.getenv('TWILIO_AUTH_TOKEN'):return False

@@ -15,7 +15,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 from .store import KINDS, Store, uid
-from .providers import Calls, ready, allowed_numbers, token_hash
+from .providers import Calls, ready, allowed_numbers, token_hash, twilio_ready
 from .rules import DEFAULT_MODEL, draft_rule, validate_landmark
 from .clips import ClipRecorder, blur_jpeg, prune, write_clip
 from .report import ai_lines, build_facts, render
@@ -38,6 +38,17 @@ def caregiver_name(step):
     return settings.get('backup_name','James Wilson') if step else settings.get('primary_name','Maya Chen')
 
 
+call_watchers=set()
+
+
+def track(coro):
+    """Run a call's status watcher in the background, keeping a reference so it is not garbage-collected."""
+    async def guarded():
+        try:await coro
+        except Exception as exc:print('Call status watcher stopped:',type(exc).__name__)
+    task=asyncio.create_task(guarded());call_watchers.add(task);task.add_done_callback(call_watchers.discard)
+
+
 async def coordinator():
     while True:
         job=store.claim_due()
@@ -57,6 +68,7 @@ async def coordinator():
                 if result.get('call_sid') and (current['status']!='open' or current_session['id']!=session['id'] or current_session['epoch']!=incident['epoch'] or not current_session['calls_armed'] or (job['step']==0 and current.get('declined_at'))):
                     await calls.cancel(result['call_sid']); result['status']='canceled'
                 store.finish_job(job['id'],result['status'],result)
+                if result.get('call_sid') and result.get('status')=='initiated':track(watch_call(job['id'],result['call_sid']))
                 with store.db:store.event('call_'+result['status'],('Primary' if job['step']==0 else 'Backup')+' caregiver · '+('real call' if result.get('mode')=='real' else 'simulated call (not placed)'),incident['id'])
             except Exception as exc:
                 store.finish_job(job['id'],'unknown',{'error':type(exc).__name__,'message':'Provider outcome unknown; no automatic retry.'})
@@ -244,9 +256,10 @@ class Armed(BaseModel):armed:bool
 
 
 @app.post('/api/session/arm-calls')
-def arm(body:Armed):
+async def arm(body:Armed):
     if body.armed and not ready():raise HTTPException(409,'Real calling requires configured providers, HTTPS callbacks, CALLS_ENABLED=true and consenting E.164 allowlist.')
     session=store.get('session');session['calls_armed']=body.armed;store.put('session',session)
+    if body.armed and twilio_ready():track(calls.prepare(store.get('settings')['room_label']))  # ESC-5
     with store.db:store.event('calls_armed' if body.armed else 'calls_disarmed','Real calls '+('armed by operator' if body.armed else 'disarmed'))
     return state()
 
@@ -582,27 +595,82 @@ async def callback(request):
     return form,attempt
 
 
+TERMINAL_CALL=('completed','busy','no-answer','failed','canceled')
+CALL_RANKS={'initiated':0,'queued':0,'ringing':1,'answered':2,'in-progress':2,'completed':3,'busy':3,'no-answer':3,'failed':3,'canceled':3}
+
+
+def apply_call_status(attempt,status):
+    """Status from Twilio's callback or from polling (ESC-2, ESC-4): never backwards; a primary call that ends unacknowledged makes the backup due now."""
+    if status in CALL_RANKS and attempt['status'] not in TERMINAL_CALL and CALL_RANKS[status]>=CALL_RANKS.get(attempt['status'],0):
+        store.finish_job(attempt['id'],status,attempt['payload'])
+    incident=store.incident(attempt['incident_id']);session=store.get('session')
+    if attempt['step']==0 and status in TERMINAL_CALL and incident and incident['status']=='open' and incident['session_id']==session['id'] and incident['epoch']==session['epoch']:
+        with store.db:store.db.execute("UPDATE jobs SET due=? WHERE incident_id=? AND step=1 AND status='queued'",(time.time(),incident['id']))
+
+
+async def watch_call(job_id,sid,every=2.0,ring_limit=40.0,give_up=150.0):
+    """ESC-4: read a Twilio call's status until it ends; trial accounts get no status callbacks. Hang up a call that rings too long."""
+    started=time.time();hung_up=False
+    while time.time()-started<give_up:
+        await asyncio.sleep(every)
+        status=await calls.call_status(sid)
+        attempt=next((a for a in store.attempts() if a['id']==job_id),None)
+        if not status or not attempt:continue
+        apply_call_status(attempt,status)
+        if status in TERMINAL_CALL:return
+        if status in ('queued','ringing','initiated') and time.time()-started>ring_limit and not hung_up:
+            hung_up=True;await calls.cancel(sid)
+
+
 @app.post('/webhooks/twilio/status')
 async def call_status(request:Request):
     form,attempt=await callback(request)
-    status=form.get('CallStatus','unknown');terminal=('completed','busy','no-answer','failed','canceled')
-    ranks={'initiated':0,'queued':0,'ringing':1,'answered':2,'in-progress':2,'completed':3,'busy':3,'no-answer':3,'failed':3,'canceled':3}
-    if status in ranks and attempt['status'] not in terminal and ranks[status]>=ranks.get(attempt['status'],0):
-        store.finish_job(attempt['id'],status,attempt['payload'])
-    incident=store.incident(attempt['incident_id']);session=store.get('session')
-    if attempt['step']==0 and status in terminal and incident and incident['status']=='open' and incident['session_id']==session['id'] and incident['epoch']==session['epoch']:
-        with store.db:store.db.execute("UPDATE jobs SET due=? WHERE incident_id=? AND step=1 AND status='queued'",(time.time(),incident['id']))
+    apply_call_status(attempt,form.get('CallStatus','unknown'))
     return RawResponse('<Response/>',media_type='application/xml')
+
+
+async def trusted_call(request,token):
+    """ESC-4: a signed request must verify; an unsigned one (trial accounts) needs this call's token, our AccountSid and its CallSid."""
+    form=await request.form();base=os.getenv('PUBLIC_CALLBACK_BASE_URL','').rstrip('/')
+    digest=token_hash(token);attempt=next((a for a in store.attempts() if secrets.compare_digest(a['payload'].get('call_token_sha256',''),digest)),None)
+    if not attempt:raise HTTPException(404,'Unknown call')
+    signature=request.headers.get('x-twilio-signature')
+    if signature is not None:
+        if not calls.valid_signature(base+request.url.path,form,signature):raise HTTPException(403,'Invalid signature')
+    elif not (secrets.compare_digest(form.get('AccountSid',''),os.getenv('TWILIO_ACCOUNT_SID','') or '-') and form.get('CallSid')==attempt['payload'].get('call_sid')):
+        raise HTTPException(403,'Unverified call')
+    return form,attempt
+
+
+@app.post('/webhooks/twilio/voice/{token}')
+async def voice_instructions(request:Request,token:str):
+    await trusted_call(request,token)
+    twiml=await calls.twiml(token)
+    if twiml is None:raise HTTPException(404,'Unknown call')
+    return RawResponse(twiml,media_type='application/xml')
+
+
+def keypad(form,attempt):
+    incident=store.incident(attempt['incident_id']);session=store.get('session')
+    if incident and incident['session_id']==session['id'] and incident['epoch']==session['epoch'] and incident['status']=='open':
+        if form.get('Digits')=='1':
+            store.transition(incident['id'],'acknowledge',caregiver_name(attempt['step']),channel='keypad');return True
+        elif form.get('Digits')=='2':
+            store.decline(incident['id'],caregiver_name(attempt['step']))
+    return False
 
 
 @app.post('/webhooks/twilio/digits')
 async def digits(request:Request):
-    form,attempt=await callback(request);incident=store.incident(attempt['incident_id']);session=store.get('session')
-    if incident and incident['session_id']==session['id'] and incident['epoch']==session['epoch'] and incident['status']=='open':
-        if form.get('Digits')=='1':
-            store.transition(incident['id'],'acknowledge',caregiver_name(attempt['step']),channel='keypad');await cancel_calls(incident['id'])
-        elif form.get('Digits')=='2':
-            store.decline(incident['id'],caregiver_name(attempt['step']))
+    form,attempt=await callback(request)
+    if keypad(form,attempt):await cancel_calls(attempt['incident_id'])
+    return RawResponse('<Response><Say>Thank you.</Say><Hangup/></Response>',media_type='application/xml')
+
+
+@app.post('/webhooks/twilio/digits/{token}')
+async def digits_for_call(request:Request,token:str):
+    form,attempt=await trusted_call(request,token)
+    if keypad(form,attempt):await cancel_calls(attempt['incident_id'])
     return RawResponse('<Response><Say>Thank you.</Say><Hangup/></Response>',media_type='application/xml')
 
 
@@ -634,7 +702,7 @@ async def voice_ack(request:Request,body:VoiceAck):
 
 
 @app.get('/call-media/{token}')
-def audio(token:str):
-    entry=calls.audio.get(token)
-    if not entry or entry[0]<time.time():raise HTTPException(404)
-    return RawResponse(entry[1],media_type='audio/wav')
+async def audio(token:str):
+    data=await calls.audio_for(token)
+    if data is None:raise HTTPException(404)
+    return RawResponse(data,media_type='audio/wav')
