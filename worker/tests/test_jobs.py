@@ -207,3 +207,33 @@ async def test_after_an_outage_only_the_newest_queued_call_is_dialled(stdb, sett
     assert {j["id"]: j["status"] for j in stdb.t["call_job"]} == {"call_1": "failed", "call_2": "ringing"}
     for t in list(calls._tasks.values()):
         t.cancel()
+
+
+class RecordingCalls:
+    name = "recording"
+
+    def __init__(self):
+        self.placed, self.hung_up = [], []
+
+    async def place(self, job_id, phone, text, on_result):
+        self.placed.append(job_id)
+        return f"CA_{job_id}"
+
+    async def hang_up(self, job_id, call_id):
+        self.hung_up.append((job_id, call_id))
+
+
+async def test_a_later_attempt_hangs_up_an_earlier_one_that_is_still_ringing(stdb, settings, clock):
+    make_alert(stdb, status="escalated")
+    queue_call(stdb, job="call_1")
+    calls = RecordingCalls()
+    w = worker(stdb, settings, clock, calls)
+    await w.poll()
+    await w.idle()
+    assert calls.placed == ["call_1"] and stdb.t["call_job"][0]["status"] == "ringing"
+    stdb.t["call_job"].append({"id": "call_2", "alertId": "a_1", "caregiverId": "c_bob", "attempt": 2, "status": "queued"})
+    await w.poll()
+    await w.idle()
+    assert calls.placed == ["call_1", "call_2"]
+    assert calls.hung_up == [("call_1", "CA_call_1")]                       # one phone, one call at a time
+    assert {j["id"]: j["status"] for j in stdb.t["call_job"]} == {"call_1": "failed", "call_2": "ringing"}

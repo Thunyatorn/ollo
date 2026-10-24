@@ -3,6 +3,7 @@
   POST /rules/interpret   dashboard, phone app (signed-in caregiver)   plain-language rule -> inactive zone draft
   POST /keyframes         vision service (vision identity)             two or three blurred JPEGs for an event
   GET  /audio/{token}     Twilio                                       the Cartesia audio of one call
+  POST /twilio/voice      Twilio (signed)                              the call instructions: play the audio, wait for one key press
   POST /twilio/gather     Twilio (signed)                              the key the backup pressed; 1 acknowledges
   POST /twilio/status     Twilio (signed)                              ringing, completed, no answer, ...
   GET  /health            monitoring                                   connections and counters, no secrets
@@ -111,14 +112,24 @@ def create_app(worker, checker, keyframes, settings, start_loop: bool = True) ->
             raise HTTPException(404, "real calls are not enabled")
         return calls
 
-    async def signed_form(request: Request) -> dict:
+    async def signed_form(request: Request, job: str = "", token: str = "") -> dict:
+        """Twilio's webhook form, checked. A signed request must carry a valid signature. Trial accounts' requests arrive
+        UNSIGNED, so those are accepted only when everything below holds: the one-time token we put in the address
+        belongs to this job, the account is ours, and Twilio confirms the call is one we placed from our number."""
         provider = twilio()
         form = {k: str(v) for k, v in (await request.form()).items()}
-        url = settings.public_base_url + request.url.path + (f"?{request.url.query}" if request.url.query else "")
-        if not valid_twilio_signature(provider.s.twilio_token, url, form, request.headers.get("x-twilio-signature")):
+        signature = request.headers.get("x-twilio-signature")
+        if signature:
+            url = settings.public_base_url + request.url.path + (f"?{request.url.query}" if request.url.query else "")
+            if valid_twilio_signature(provider.s.twilio_token, url, form, signature):
+                return form
             log.warning("refused a Twilio webhook with a bad signature")
             raise HTTPException(403, "bad signature")
-        return form
+        known = bool(token) and provider.token_job.get(token) == job and provider.audio_for(token) is not None
+        if known and form.get("AccountSid") == provider.s.twilio_sid and await provider.call_is_ours(form.get("CallSid", "")):
+            return form
+        log.warning("refused an unsigned Twilio webhook that did not match a call we placed")
+        raise HTTPException(403, "not a call of ours")
 
     @app.get("/audio/{token}")
     def audio(token: str):
@@ -127,9 +138,18 @@ def create_app(worker, checker, keyframes, settings, start_loop: bool = True) ->
             raise HTTPException(404, "no such audio (it expires after 15 minutes)")
         return Response(wav, media_type="audio/wav", headers={"Cache-Control": "no-store"})
 
+    @app.post("/twilio/voice")
+    async def voice(request: Request, job: str, t: str):
+        """Twilio fetches this when the call is answered: play the message, wait for one key press."""
+        await signed_form(request, job, t)
+        provider = twilio()
+        if not SAFE_ID.match(job) or provider.audio_for(t) is None:
+            raise HTTPException(404, "no such call")
+        return Response(provider.twiml(job, t), media_type="application/xml")
+
     @app.post("/twilio/gather")
-    async def gather(request: Request, job: str):
-        form = await signed_form(request)
+    async def gather(request: Request, job: str, t: str = ""):
+        form = await signed_form(request, job, t)
         pressed = form.get("Digits", "") == "1"
         await worker.on_call_result(job, "pressed_1" if pressed else "no_answer")
         say = "Thank you. You are handling the alert now." if pressed else "Okay. NestWatch will keep trying other staff."

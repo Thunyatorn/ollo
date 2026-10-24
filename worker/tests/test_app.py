@@ -84,3 +84,80 @@ async def test_health_shows_no_secrets(stdb, settings, clock):
     c, *_ = client(stdb, settings, clock)
     text = (await c.get("/health")).text
     assert "super-secret" not in text and "worker-token" not in text and '"calls":"simulated"' in text
+
+
+async def test_twilio_voice_gives_call_instructions_only_to_twilio_for_a_known_message(stdb, settings, clock):
+    settings.twilio_token = "tok"
+    calls = TwilioCalls(settings)
+    calls.audio["tok123"] = (__import__("time").time() + 900, b"RIFF")
+    c, w, _ = client(stdb, settings, clock, calls=calls)
+    url = "https://worker.example.test/twilio/voice?job=call_1&t=tok123"
+    assert (await c.post("/twilio/voice?job=call_1&t=tok123", data={"CallSid": "CA1"}, headers={"x-twilio-signature": "forged"})).status_code == 403
+    sig = twilio_signature("tok", url, {"CallSid": "CA1"})
+    r = await c.post("/twilio/voice?job=call_1&t=tok123", data={"CallSid": "CA1"}, headers={"x-twilio-signature": sig})
+    assert r.status_code == 200 and r.headers["content-type"].startswith("application/xml")
+    assert "<Gather" in r.text and "/audio/tok123" in r.text and "/twilio/gather?job=call_1" in r.text
+    other = "https://worker.example.test/twilio/voice?job=call_1&t=nope"
+    sig2 = twilio_signature("tok", other, {"CallSid": "CA1"})
+    assert (await c.post("/twilio/voice?job=call_1&t=nope", data={"CallSid": "CA1"}, headers={"x-twilio-signature": sig2})).status_code == 404
+
+
+# ---- Twilio trial accounts: requests arrive WITHOUT a signature ----
+CALL_SID = "CA" + "0" * 32
+
+
+def unsigned_world(stdb, settings, clock, from_number="+15550009999", direction="outbound-api"):
+    import time
+    settings.twilio_sid, settings.twilio_token, settings.twilio_from = "AC1", "tok", "+15550009999"
+
+    def twilio_lookup(req):
+        if req.url.path.endswith(f"/Calls/{CALL_SID}.json"):
+            return httpx.Response(200, json={"from": from_number, "direction": direction})
+        return httpx.Response(404, json={})
+    calls = TwilioCalls(settings, httpx.AsyncClient(transport=httpx.MockTransport(twilio_lookup)))
+    calls.audio["secret1"], calls.token_job["secret1"] = (time.time() + 900, b"RIFF"), "call_1"
+    make_alert(stdb, status="escalated")
+    stdb.t["call_job"].append({"id": "call_1", "alertId": "a_1", "caregiverId": "c_bob", "attempt": 1, "status": "ringing"})
+    c, w, _ = client(stdb, settings, clock, calls=calls)
+    w.live_calls["call_1"] = CALL_SID
+    return c, w
+
+
+FORM = {"AccountSid": "AC1", "CallSid": CALL_SID, "Digits": "1"}
+
+
+async def test_an_unsigned_request_for_a_call_we_placed_is_accepted(stdb, settings, clock):
+    c, w = unsigned_world(stdb, settings, clock)
+    voice = await c.post("/twilio/voice?job=call_1&t=secret1", data=FORM)
+    assert voice.status_code == 200 and "<Gather" in voice.text
+    gather = await c.post("/twilio/gather?job=call_1&t=secret1", data=FORM)
+    assert gather.status_code == 200 and "Thank you" in gather.text
+    assert stdb.t["alert"][0]["ackedVia"] == "phone_call"
+
+
+async def test_unsigned_requests_that_do_not_match_a_call_we_placed_are_refused(stdb, settings, clock):
+    c, w = unsigned_world(stdb, settings, clock)
+    for name, url, form in [
+        ("no token", "/twilio/gather?job=call_1", FORM),
+        ("wrong token", "/twilio/gather?job=call_1&t=guess", FORM),
+        ("token of another job", "/twilio/gather?job=call_2&t=secret1", FORM),
+        ("someone else's account", "/twilio/gather?job=call_1&t=secret1", {**FORM, "AccountSid": "AC999"}),
+        ("a call that is not on file", "/twilio/gather?job=call_1&t=secret1", {**FORM, "CallSid": "CA" + "1" * 32}),
+        ("a malformed call id", "/twilio/gather?job=call_1&t=secret1", {**FORM, "CallSid": "x"}),
+    ]:
+        r = await c.post(url, data=form)
+        assert r.status_code == 403, name
+    assert stdb.t["alert"][0]["ownerId"] is None                         # nobody got to acknowledge anything
+
+
+async def test_a_call_from_another_number_or_an_incoming_call_does_not_count(stdb, settings, clock):
+    for kwargs in ({"from_number": "+15551112222"}, {"direction": "inbound"}):
+        c, w = unsigned_world(stdb, settings, clock, **kwargs)
+        assert (await c.post("/twilio/gather?job=call_1&t=secret1", data=FORM)).status_code == 403
+        stdb.t["alert"].clear(); stdb.t["call_job"].clear()
+
+
+async def test_a_wrong_signature_is_refused_even_with_the_right_token(stdb, settings, clock):
+    c, w = unsigned_world(stdb, settings, clock)
+    r = await c.post("/twilio/gather?job=call_1&t=secret1", data=FORM, headers={"x-twilio-signature": "forged"})
+    assert r.status_code == 403

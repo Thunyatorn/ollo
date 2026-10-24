@@ -31,6 +31,7 @@ class Worker:
         self.stdb, self.s, self.claude, self.calls, self.keyframes, self.clock = stdb, settings, claude, calls, keyframes, clock
         self.started_at = clock()
         self.live_calls: dict[str, str | None] = {}     # job id -> provider call id, while the call is in progress
+        self._job_alert: dict[str, str] = {}            # job id -> alert id
         self._call_started: set[str] = set()
         self._opinion_done: set[str] = set()
         self._report_started: dict[str, float] = {}     # alert id -> when (retried after a minute if it failed)
@@ -151,6 +152,12 @@ class Worker:
             return
         text = call_message(alert, await self.zone_name(alert["zoneId"]), self.clock())
         delays = self.s.call_retry_delays_s
+        self._job_alert[jid] = alert["id"]
+        for older, call_id in [(j, c) for j, c in self.live_calls.items() if j != jid and self._job_alert.get(j) == alert["id"]]:
+            self.live_calls.pop(older, None)                    # a newer attempt replaces one still ringing: one phone, one call
+            if call_id:
+                self.spawn(self.calls.hang_up(older, call_id), f"hang up {older}")
+            self.spawn(self.set_job(older, "failed"), f"supersede {older}")
         for attempt in range(1 + self.s.call_retries):
             self.live_calls[jid] = None                         # results may arrive before place() returns
             try:
