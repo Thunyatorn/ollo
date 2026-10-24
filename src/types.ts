@@ -13,6 +13,7 @@ export interface Incident {
   origin: string;
   priority: string;
   media_time_ms?: number;
+  media_end_time_ms?: number;
   source_key?: string;
   epoch?: number;
   primary_due_at?: number;
@@ -20,6 +21,7 @@ export interface Incident {
   limitations?: string[];
   clip_url?: string;
   evidence_url?: string;
+  demo_response?: { time_ms: number; description: string; tool?: string }[];
   second_opinion?: {
     assessment:
       | "concern_visible"

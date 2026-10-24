@@ -73,7 +73,7 @@ function MonitoringPlayback() {
     }, 100);
     return () => clearInterval(timer);
   }, [playing]);
-  return <><div className="ds-player"><button className="icon-button" aria-label={playing ? "Pause preview" : "Play preview"} onClick={() => setPlaying(!playing)}>{playing ? <Pause size={16} /> : <Play size={16} />}</button><code>{String(Math.floor(position / 60)).padStart(2, "0")}:{String(Math.floor(position % 60)).padStart(2, "0")} / 02:00</code></div><div className="ds-editor-preview"><EditorTimeline camera="Toddler room · CAM 01" room={0} duration={120} position={position} playing={playing} demo peaks={null} video={previewVideo} markers={[{ id: "preview-incident", time: 28, title: "Motion near restricted area", demo: true }]} onSeek={seconds => { setPosition(seconds); setPlaying(false); }} /></div></>;
+  return <><div className="ds-player"><button className="icon-button" aria-label={playing ? "Pause preview" : "Play preview"} onClick={() => setPlaying(!playing)}>{playing ? <Pause size={16} /> : <Play size={16} />}</button><code>{String(Math.floor(position / 60)).padStart(2, "0")}:{String(Math.floor(position % 60)).padStart(2, "0")} / 02:00</code></div><div className="ds-editor-preview"><EditorTimeline camera="Toddler room · CAM 01" room={0} duration={120} position={position} playing={playing} demo peaks={null} video={previewVideo} markers={[{ id: "preview-incident", time: 28, endTime: 46, title: "Motion near restricted area", demo: true }]} onSeek={seconds => { setPosition(seconds); setPlaying(false); }} /></div></>;
 }
 
 export default function DesignSystem() {

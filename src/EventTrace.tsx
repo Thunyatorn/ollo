@@ -34,7 +34,7 @@ export default function EventTrace({
   onSeek: (seconds: number) => void;
   onReport: (id: string) => void;
 }) {
-  const incidents = room === 0 ? state.incidents : [];
+  const incidents = state.incidents;
   return (
     <aside className="event-trace">
       <header>
@@ -70,8 +70,11 @@ export default function EventTrace({
               >
                 <button
                   className="trace-summary"
-                  onClick={() => onSelect(expanded ? "collapsed" : incident.id)}
+                  onClick={() => {
+                    onSelect(expanded ? "collapsed" : incident.id);
+                  }}
                   aria-expanded={expanded}
+                  aria-controls={`trace-details-${incident.id}`}
                 >
                   <span className="trace-node">
                     <Circle size={7} fill="currentColor" />
@@ -81,13 +84,9 @@ export default function EventTrace({
                       <time>
                         {incident.media_time_ms === undefined
                           ? "EVENT"
-                          : clock(incident.media_time_ms)}
+                          : `${clock(incident.media_time_ms)}${incident.media_end_time_ms !== undefined ? ` — ${clock(incident.media_end_time_ms)}` : ""}`}
                       </time>
-                      <span>
-                        {incident.origin === "fixture"
-                          ? "DEMO"
-                          : incident.priority.toUpperCase()}
-                      </span>
+                      {incident.origin !== "fixture" && <span>{incident.priority.toUpperCase()}</span>}
                     </span>
                     <h3>{incident.title}</h3>
                     <span className={`trace-status ${incident.status}`}>
@@ -108,8 +107,19 @@ export default function EventTrace({
                   <ChevronDown size={13} />
                 </button>
                 {expanded && (
-                  <div className="trace-detail">
-                    <p>{incident.observations[0]}</p>
+                  <div className="trace-detail" id={`trace-details-${incident.id}`}>
+                    {incident.observations.map((observation, index) => <p key={index}>{observation}</p>)}
+                    <div className="trace-response-log">
+                      {incident.demo_response ? incident.demo_response.map((step, index) => <div className="trace-activity-step" key={index}>
+                        <button className="trace-time-button" onClick={() => onSeek(step.time_ms / 1000)} aria-label={`Seek to ${clock(step.time_ms)}`}>{clock(step.time_ms)}</button>
+                        <div>{step.tool && <span className="trace-tool-badge">{step.tool === "Phone call" && <Phone size={10} />}{step.tool}</span>}<p>{step.description}</p></div>
+                      </div>) : <>
+                        {incident.media_time_ms !== undefined && <div className="trace-timepoints"><button className="trace-time-button" onClick={() => onSeek(incident.media_time_ms! / 1000)}>{clock(incident.media_time_ms)}</button>{incident.media_end_time_ms !== undefined && <button className="trace-time-button" onClick={() => onSeek(incident.media_end_time_ms! / 1000)}>{clock(incident.media_end_time_ms)}</button>}</div>}
+                        {attempts.map(attempt => <p key={attempt.id}><span className="trace-tool-badge"><Phone size={10} />{attempt.payload?.provider === "cartesia_agent" ? "Agent phone call" : "Phone call"}</span> {state.caregivers[attempt.step]?.name || "Caregiver"} · {attempt.status.replaceAll("_", " ")}{attempt.payload?.mode === "simulation" ? " (simulated)" : ""}</p>)}
+                        {incident.assigned_responder && <p>{incident.assigned_responder}{incident.acknowledged_via ? ` · ${incident.acknowledged_via} response` : " · assigned responder"}</p>}
+                        <p>{incident.status === "resolved" ? "Incident resolved after review." : incident.status === "acknowledged" ? "Caregiver is responding." : incident.status === "dismissed" ? "Dismissed after review." : "Awaiting caregiver response."}</p>
+                      </>}
+                    </div>
                     {incident.limitations?.map((text) => (
                       <p className="trace-limitation" key={text}>
                         Possible concern only. {text}
@@ -231,20 +241,12 @@ export default function EventTrace({
                           <X size={14} />
                         </button>
                       )}
-                      {incident.media_time_ms !== undefined && (
-                        <button
-                          className="text-button"
-                          onClick={() => onSeek(incident.media_time_ms! / 1000)}
-                        >
-                          Jump to moment
-                        </button>
-                      )}
-                      <button
+                      {!incident.demo_response && <button
                         className="text-button"
                         onClick={() => onReport(incident.id)}
                       >
                         Report
-                      </button>
+                      </button>}
                     </div>
                   </div>
                 )}

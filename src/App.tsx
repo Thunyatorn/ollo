@@ -14,16 +14,15 @@ import {
   Focus,
   Grid2X2,
   History,
+  Keyboard,
   LockKeyhole,
   LogOut,
-  Map as MapIcon,
   Maximize2,
   Pause,
   Phone,
   Play,
   Plus,
   RotateCcw,
-  Ruler,
   ScanLine,
   Settings2,
   Shield,
@@ -38,6 +37,9 @@ import {
 import type { LookoutState } from "./types";
 import { initialState, request } from "./api";
 import EventTrace from "./EventTrace";
+import { demoIncidents } from "./demoIncidents";
+import FullscreenControls from "./FullscreenControls";
+import usePlaybackShortcuts from "./usePlaybackShortcuts";
 import EditorTimeline, { type TimelineMarker } from "./EditorTimeline";
 import MonitoringControls, { dateKey, type CameraLayout } from "./MonitoringControls";
 // COCO keypoint pairs drawn as limbs (UI-6).
@@ -230,6 +232,20 @@ export default function App() {
   stateRef.current = state;
   const incidentDate = (at: string | number) => dateKey(new Date(typeof at === "number" ? at * 1000 : at));
   const datedState = reviewDate ? { ...state, incidents: state.incidents.filter(i => incidentDate(i.opened_at) === reviewDate) } : state;
+  const currentSourceKey = sourceType === "illustration" ? "fixture" : sourceType === "recording" ? state.session.media_id : sourceType === "server" ? "server_camera" : "webcam";
+  const mockIncidents = room !== 0 || sourceType === "illustration" ? demoIncidents(room) : [];
+  const cameraIncidents = [
+    ...(room === 0 && sourceType !== "illustration" ? datedState.incidents.filter(i => !i.source_key || i.source_key === currentSourceKey) : []),
+    ...mockIncidents.filter(i => !reviewDate || incidentDate(i.opened_at) === reviewDate),
+  ].sort((a, b) => (a.media_time_ms ?? 0) - (b.media_time_ms ?? 0));
+  const traceState = { ...datedState, incidents: cameraIncidents };
+  const timelineMarkers = cameraIncidents.filter(i => i.media_time_ms !== undefined).map(i => ({ id: i.id, time: i.media_time_ms! / 1000, endTime: i.media_end_time_ms !== undefined ? i.media_end_time_ms / 1000 : i.resolved_at ? i.media_time_ms! / 1000 + Math.max(0, (new Date(i.resolved_at).getTime() - new Date(typeof i.opened_at === "number" ? i.opened_at * 1000 : i.opened_at).getTime()) / 1000) : undefined, title: i.title, demo: !!i.demo_response }));
+  const playheadIncidentId = timelineMarkers.find(marker =>
+    marker.endTime !== undefined && position >= marker.time && position <= marker.endTime
+  )?.id;
+  useEffect(() => {
+    setSelectedIncident(playheadIncidentId || "collapsed");
+  }, [position, playheadIncidentId, room, reviewDate, sourceType]);
   const active = state.incidents.find(
     (i) => i.status === "open" || i.status === "acknowledged",
   );
@@ -818,10 +834,31 @@ export default function App() {
         setState(await request(`/session/${next ? "start" : "pause"}`, {}));
         seq.current = 0;
       } catch {
-        notify("Analysis state could not be updated");
+        setAnalysisReady(false);
       }
     }
   }
+  function seekPlayback(seconds: number) {
+    setPlaying(false);
+    setPosition(seconds);
+    if (video.current) {
+      video.current.pause();
+      video.current.currentTime = seconds;
+    }
+  }
+  usePlaybackShortcuts({
+    enabled: !signedOut && page === "monitor" && !sourceOpen && !report && !scenarioOpen && !calibrating && !drawing && !rulesOpen && !window.location.pathname.startsWith("/respond/"),
+    position, duration,
+    onToggle: () => { void togglePlay(); },
+    onPause: () => { setPlaying(false); video.current?.pause(); },
+    onSeek: seekPlayback,
+    onMute: () => setMuted(m => !m),
+    onFullscreen: () => {
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+      else void stage.current?.requestFullscreen?.().catch(() => {});
+    },
+    onLayout: setCameraLayout,
+  });
   async function reset() {
     audioFile.current = null;
     setAudioPeaks(null);
@@ -1025,50 +1062,6 @@ export default function App() {
                         onClick={() => setZones(!zones)}
                       >
                         <Focus size={16} />
-                      </button>
-                      <button
-                        className={`icon-button ${floorOpen ? "enabled" : ""}`}
-                        title={
-                          sourceType === "illustration"
-                            ? "Connect a video to see the floor plan"
-                            : "Floor plan"
-                        }
-                        aria-label="Floor plan"
-                        disabled={sourceType === "illustration"}
-                        onClick={() => setFloorOpen(!floorOpen)}
-                      >
-                        <MapIcon size={16} />
-                      </button>
-                      <button
-                        className={`icon-button ${rulesOpen ? "enabled" : ""}`}
-                        title={
-                          sourceType === "illustration"
-                            ? "Connect a video to set up rules"
-                            : "Rules and landmarks"
-                        }
-                        aria-label="Rules and landmarks"
-                        disabled={sourceType === "illustration"}
-                        onClick={() => {
-                          setCalibrating(false);
-                          setDrawing(false);
-                          setRuleMessage("");
-                          setRulesOpen(!rulesOpen);
-                        }}
-                      >
-                        <Shield size={16} />
-                      </button>
-                      <button
-                        className={`icon-button ${calibrating ? "enabled" : ""}`}
-                        title={
-                          sourceType === "illustration"
-                            ? "Connect a video to calibrate the floor"
-                            : "Calibrate floor for predictive warnings"
-                        }
-                        aria-label="Calibrate floor"
-                        disabled={sourceType === "illustration"}
-                        onClick={toggleCalibration}
-                      >
-                        <Ruler size={16} />
                       </button>
                       <button
                         className="icon-button"
@@ -1692,6 +1685,7 @@ export default function App() {
                         <div className="camera-shade" />
                       </>
                     )}
+                    <FullscreenControls stage={stage} position={position} duration={duration} playing={playing} muted={muted} onToggle={() => { void togglePlay(); }} onMute={() => setMuted(m => !m)} onSeek={seekPlayback} />
                   </div>
 
                 </div>
@@ -1701,16 +1695,15 @@ export default function App() {
                     <div className="preview-card-scene">{index === 0 && sourceType !== "illustration" ? serverFrame && sourceType === "server" ? <img src={serverFrame} alt="Current server camera preview" /> : <div className="preview-source-placeholder"><Video size={24} /><span>{sourceType === "webcam" ? "Webcam connected" : "Video source connected"}</span><small>Select to view and control</small></div> : <DemoScene room={index} zones={zones} />}</div>
                     <div className="preview-card-footer"><span>{index === 0 && sourceType !== "illustration" ? "Connected source" : "Illustrative demo · not a live feed"}</span><Maximize2 size={12} /></div>
                   </button>)}
-                  <button className="add-camera-tile" onClick={() => { setCameraMessage(""); setSourceOpen(true); }}><Plus size={20} /><strong>Connect a camera</strong><span>RTSP or HTTP stream</span><small>One analyzed source at a time</small></button>
+                  {cameraLayout === "grid" ? <><div className="empty-camera-slot" aria-label="Empty camera slot 3" /><div className="empty-camera-slot" aria-label="Empty camera slot 4" /></> : <button className="add-camera-tile" onClick={() => { setCameraMessage(""); setSourceOpen(true); }}><Plus size={20} /><strong>Connect a camera</strong><span>RTSP or HTTP stream</span><small>One analyzed source at a time</small></button>}
                 </div>}
                 </div>
 
               </div>
               <div className="monitor-side-panel">
-                <MonitoringControls date={reviewDate} onDate={setReviewDate} layout={cameraLayout} onLayout={setCameraLayout} eventDates={new Set(state.incidents.map(i => incidentDate(i.opened_at)))} />
-                {reviewDate && <div className="side-date-review"><span>{datedState.incidents.length} incidents</span><button onClick={() => setReviewDate(null)}>Back to live</button></div>}
+                <MonitoringControls date={reviewDate} onDate={setReviewDate} layout={cameraLayout} onLayout={setCameraLayout} eventDates={new Set((room !== 0 || sourceType === "illustration" ? mockIncidents : state.incidents).map(i => incidentDate(i.opened_at)))} />
               <EventTrace
-                state={datedState}
+                state={traceState}
                 room={room}
                 selected={selectedIncident}
                 onSelect={setSelectedIncident}
@@ -1746,6 +1739,8 @@ export default function App() {
                             playing ? "Pause playback" : "Play playback"
                           }
                           onClick={togglePlay}
+                          title="Play / pause (Space)"
+                          aria-keyshortcuts="Space"
                         >
                           {playing ? (
                             <Pause size={16} fill="currentColor" />
@@ -1758,11 +1753,25 @@ export default function App() {
                         </span>
                       </div>
                       <div>
+                        <details className="shortcut-help">
+                          <summary aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)"><Keyboard size={15} /></summary>
+                          <div className="shortcut-popover" role="region" aria-label="Keyboard shortcuts">
+                            <strong>Keyboard shortcuts</strong>
+                            {[
+                              ["Play / pause", "Space"], ["Seek 5 seconds", "← / →"],
+                              ["Seek 10 seconds", "Shift + ← / →"], ["Start / end", "Home / End"],
+                              ["Pause", "K"], ["Mute / unmute", "M"], ["Fullscreen", "F"],
+                              ["Single / grid / focus", "1 / 2 / 3"], ["Show shortcuts", "?"],
+                            ].map(([label, keys]) => <div key={label}><span>{label}</span><kbd>{keys}</kbd></div>)}
+                          </div>
+                        </details>
                         <span className="speed">1×</span>
                         <button
                           className="icon-button"
                           aria-label={muted ? "Unmute video" : "Mute video"}
                           onClick={() => setMuted(!muted)}
+                          title="Mute / unmute (M)"
+                          aria-keyshortcuts="M"
                         >
                           {muted ? (
                             <VolumeX size={15} />
@@ -1781,13 +1790,9 @@ export default function App() {
                       demo={room !== 0 || sourceType === "illustration"}
                       peaks={audioPeaks}
                       video={video}
-                      markers={[
-                        ...(room === 0 ? datedState.incidents.filter(i => i.media_time_ms !== undefined && i.source_key === (sourceType === "illustration" ? "fixture" : sourceType === "recording" ? state.session.media_id : sourceType === "server" ? "server_camera" : "webcam")).map(i => ({ id: i.id, time: i.media_time_ms! / 1000, title: i.title })) : []),
-                        ...((room !== 0 || sourceType === "illustration") && !reviewDate ? [
-                          { id: "sample-motion", time: room === 0 ? 28 : 37, title: "Motion near restricted area", demo: true },
-                          { id: "sample-activity", time: room === 0 ? 83 : 91, title: "Activity flagged for review", demo: true },
-                        ] : []),
-                      ]}
+                      selectedId={selectedIncident}
+                      onSelectIncident={marker => setSelectedIncident(marker.id)}
+                      markers={timelineMarkers}
                       onSeek={(seconds, marker?: TimelineMarker) => {
                         setPlaying(false);
                         setPosition(seconds);
@@ -1795,7 +1800,7 @@ export default function App() {
                           video.current.pause();
                           video.current.currentTime = seconds;
                         }
-                        if (marker && !marker.demo) setSelectedIncident(marker.id);
+                        setSelectedIncident(marker ? marker.id : "collapsed");
                       }}
                     />
                   </div>
