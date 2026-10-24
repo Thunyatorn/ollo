@@ -7,6 +7,9 @@ import uuid
 from pathlib import Path
 
 
+PRIMARY_CAMERA = 'cam-01'  # The session's source camera; SRC-5 cameras are cam-02 and up.
+
+
 def uid():
     return uuid.uuid4().hex
 
@@ -44,7 +47,8 @@ class Store:
             self.put('settings', {'room_label': 'Toddler room', 'primary_delay_seconds': 8, 'backup_delay_seconds': 30, 'cloud_review_enabled': False, 'zone': {'enabled': True, 'vertices': [[.72,.15],[.94,.15],[.94,.88],[.72,.88]]}, 'audio_enabled': False})
 
     def get(self, key):
-        row = self.db.execute('SELECT value FROM kv WHERE key=?', (key,)).fetchone()
+        with self.lock:  # One connection is shared by the event loop, the threadpool and every camera (SRC-5).
+            row = self.db.execute('SELECT value FROM kv WHERE key=?', (key,)).fetchone()
         return json.loads(row[0]) if row else None
 
     def put(self, key, value):
@@ -70,12 +74,18 @@ class Store:
     def save_incident(self, incident):
         self.db.execute('INSERT OR REPLACE INTO incidents VALUES (?,?,?,?,?,?,?)', (incident['id'],incident['session_id'],incident['epoch'],incident['kind'],incident['status'],json.dumps(incident),incident['opened_at']))
 
-    def observe(self, kind, observations, origin='fixture', priority='high'):
+    def _latest(self, session, kind, camera_id):
+        """Newest incident of this kind in the current session from this camera (SRC-5). Untagged incidents are cam-01's."""
+        rows = self.db.execute('SELECT payload FROM incidents WHERE session_id=? AND epoch=? AND kind=? ORDER BY opened DESC LIMIT 50', (session['id'],session['epoch'],kind)).fetchall()
+        return next((json.loads(r[0]) for r in rows if json.loads(r[0]).get('camera_id', PRIMARY_CAMERA) == camera_id), None)
+
+    def observe(self, kind, observations, origin='fixture', priority='high', camera=None):
+        """`camera` is {'id', 'room'} for an additional server camera (SRC-5); None is the primary camera, cam-01."""
+        camera_id = (camera or {}).get('id', PRIMARY_CAMERA)
         with self.lock, self.db:
             session = self.get('session'); now = time.time()
-            recent = self.db.execute('SELECT payload FROM incidents WHERE session_id=? AND epoch=? AND kind=? ORDER BY opened DESC LIMIT 1', (session['id'],session['epoch'],kind)).fetchone()
-            if recent:
-                old = json.loads(recent[0])
+            old = self._latest(session, kind, camera_id)
+            if old:
                 if old['status'] in ('open','acknowledged'):
                     old['observations'] = list(dict.fromkeys(old['observations'] + observations))[-12:]
                     old['revision'] += 1; self.save_incident(old); return old
@@ -83,21 +93,20 @@ class Store:
                 if now - old.get('closed_at',old['opened_at']) < 30:
                     return old
             settings = self.get('settings')
-            incident = {'id':uid(),'session_id':session['id'],'epoch':session['epoch'],'kind':kind,'title':KINDS[kind][0],'room':settings['room_label'],'status':'open','opened_at':now,'acknowledged_at':None,'resolved_at':None,'observations':observations,'origin':origin,'priority':priority,'revision':1,'assigned_responder':None,'limitations':list(KINDS[kind][2]),'primary_due_at':now+settings['primary_delay_seconds'],'backup_due_at':now+settings['backup_delay_seconds']}
+            incident = {'id':uid(),'session_id':session['id'],'epoch':session['epoch'],'kind':kind,'title':KINDS[kind][0],'room':(camera or {}).get('room') or settings['room_label'],'camera_id':camera_id,'status':'open','opened_at':now,'acknowledged_at':None,'resolved_at':None,'observations':observations,'origin':origin,'priority':priority,'revision':1,'assigned_responder':None,'limitations':list(KINDS[kind][2]),'primary_due_at':now+settings['primary_delay_seconds'],'backup_due_at':now+settings['backup_delay_seconds']}
             self.save_incident(incident)
             for step,due in [(0,incident['primary_due_at']),(1,incident['backup_due_at'])]:
                 self.db.execute('INSERT OR IGNORE INTO jobs VALUES (?,?,?,?,?,?)',(uid(),incident['id'],step,due,'queued',json.dumps({})))
-            self.event('incident_opened',incident['title'] + (' · developer fixture' if origin=='fixture' else ''),incident['id'])
+            self.event('incident_opened',incident['title'] + (f" · {incident['room']}" if camera else '') + (' · developer fixture' if origin=='fixture' else ''),incident['id'])
             return incident
 
-    def annotate(self, kind, review):
-        """Attach a second opinion to the newest incident of this kind in the current session. Status never changes."""
+    def annotate(self, kind, review, camera_id=PRIMARY_CAMERA):
+        """Attach a second opinion to the newest incident of this kind from this camera in the current session. Status never changes."""
         with self.lock, self.db:
             session = self.get('session')
-            row = self.db.execute('SELECT payload FROM incidents WHERE session_id=? AND epoch=? AND kind=? ORDER BY opened DESC LIMIT 1', (session['id'], session['epoch'], kind)).fetchone()
-            if not row:
+            incident = self._latest(session, kind, camera_id)
+            if not incident:
                 return None
-            incident = json.loads(row[0])
             incident['second_opinion'] = review
             incident['revision'] += 1
             self.save_incident(incident)

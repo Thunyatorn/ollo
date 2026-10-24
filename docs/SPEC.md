@@ -29,7 +29,7 @@ Development is spec-first. Every behavior has a requirement with a stable ID, te
 | D-3 | Keep the FastAPI + SQLite core as the single alert authority, and the React dashboard. Spacetime and Mana are **not** used as the core. | The lifecycle, timers, first-acknowledgment-wins, and call gating already work and are covered by tests. Rebuilding them in a new backend this weekend risks the one flow the demo depends on. | The team decides the Spacetime or Mana prize is worth it. Then add Spacetime as a read-only live mirror of incidents and positions for phones; FastAPI stays authoritative. |
 | D-4 | Escalation calls use Twilio with Cartesia voice (built). Add a Cartesia Line voice agent for spoken acknowledgment ("I'm on it") behind the same call adapter. Wajo is not used. | Cartesia does real work in the call, which fits its sponsor track. Wajo Fo has no developer API for starting calls. | Cartesia Line cannot call back to our acknowledge endpoint (open question Q-1). |
 | D-5 | Claude model IDs are configuration (`VISION_MODEL`, `CLAUDE_MODEL`). Settings show estimated cost per review. | The cost-quality trade is the team's call. Per-review cost is $0.0003 (Haiku 5.5) to about $0.01 (Opus 5.5). | — |
-| D-6 | The browser samples recorded video and the browser webcam at 12 fps. A webcam or RTSP/HTTP camera can instead be read by the server with OpenCV (SRC-4), which the live demo uses. | Uploaded clips need browser playback. Server capture removes the hidden-tab throttling limit, so a minimized dashboard never slows analysis. | Several cameras per server are needed (out of scope today). |
+| D-6 | The browser samples recorded video and the browser webcam at 12 fps. A webcam or RTSP/HTTP camera can instead be read by the server with OpenCV (SRC-4), which the live demo uses. Up to 4 server cameras run at once (SRC-5), each with its own capture, tracker, rule state and incidents; zones, calibration and plain-language rules stay on cam-01. Development and demo cameras come from MediaMTX: looped staged clips and relayed publisher-authorized public webcams ([scripts/cameras/README.md](../scripts/cameras/README.md)). | Uploaded clips need browser playback. Server capture removes the hidden-tab throttling limit, so a minimized dashboard never slows analysis. Several rooms per site are the normal CCTV case, and teams need repeatable, reliable feeds without hardware. | More than 4 cameras or more than about 40 analyzed frames per second are needed on one laptop (move pose inference to a batched worker or a GPU), or per-camera zones and calibration are needed. |
 
 ## Glossary
 
@@ -76,6 +76,21 @@ Development is spec-first. Every behavior has a requirement with a stable ID, te
   - **Release.** A session reset, any other source (upload, browser webcam, fixture), or server shutdown stops capture and releases the camera.
   - **Testing.** Tests use a fake capture object and never open a real camera. The browser check serves a generated MJPEG stream over local HTTP, so the real OpenCV path is exercised.
 - **Verify:** `test_capture.py::test_camera_spec_accepts_index_and_stream_urls_only`, `test_capture.py::test_capture_samples_newest_frames_at_12_fps`, `test_capture.py::test_stalled_stream_goes_offline_within_3_s_and_never_repeats_a_frame`, `test_capture.py::test_capture_reconnects_when_the_camera_drops_or_cannot_open`, `test_capture.py::test_server_camera_runs_analysis_without_a_browser`, `scripts/camera-smoke.mjs`. Live, through real OpenCV and YOLO pose: 12.0–12.4 fps analyzed with no dashboard tab open, and reported offline 2.0–2.1 s after the stream stalled (improvement log, SRC-4).
+
+#### SRC-5 · Several server cameras at once
+- **Status:** Done
+- **Acceptance:**
+  - **Why.** A site has several rooms. Each needs live analysis, and the team needs 2–3 feeds running together for the demo.
+  - **Adding.** While the server camera is the source (SRC-4, which is always `cam-01`), `POST /api/cameras` with `{camera, room_label?}` adds another camera without resetting the session. `camera` follows SRC-4's rules (422 otherwise). The room label is 1–80 characters and defaults to "Camera 0N". IDs are `cam-02` to `cam-04`, the lowest free one first. It returns 409 when no server camera session is running, when that source is already connected, or when 4 cameras are connected.
+  - **Removing.** `DELETE /api/cameras/{id}` stops and releases that camera and finalizes its clips in progress; the others keep running. `cam-01` cannot be removed this way (409: choose another source); an unknown ID is 404. A session reset, any other source, or shutdown stops and releases every camera.
+  - **Independent analysis.** Each camera has its own capture (SRC-4: newest frame only, 12 fps, never a repeated frame), its own vision engine (tracker IDs, rule evidence, analysis rate), its own clip buffer, and its own busy flag, so one slow camera never starves another. Frames are analyzed only while the session is active, with SRC-3 ordering per camera.
+  - **Incidents.** Every incident records `camera_id` and takes its `room` from that camera's label. Deduplication (ALR-1) and second opinions (AI-4) apply per camera: the same kind on two cameras is two incidents.
+  - **Scope of setup.** Zones, landmarks, rules and floor calibration are drawn on cam-01's picture, so other cameras never inherit them. Stillness, nap mode and cloud review settings apply to all.
+  - **Live pictures.** `GET /api/camera/frame?camera=<id>&after=N` behaves as in SRC-4 for that camera; without `camera` it is cam-01. An unknown camera is 404.
+  - **Health.** `GET /api/cameras` and `cameras` in `GET /api/state` list every camera, cam-01 first, with `room_label`, `health`, `analysis_fps`, `detector`, `people` (tracked now) and `capture` (source with any password masked, status, camera frame rate, error). One camera going offline changes only its own health; `camera_offline` and `camera_online` events name the room.
+  - **Dashboard.** With a server camera, the camera picker switches the main picture among live cameras, a strip shows each other camera's live picture with boxes, room and rates, and a tile adds or removes cameras.
+  - **Testing.** Tests use fake captures and a fast stand-in detector. The live check (improvement log) uses real OpenCV and YOLO pose on three MediaMTX RTSP feeds.
+- **Verify:** `test_multicamera.py::test_several_server_cameras_analyze_independently`, `test_multicamera.py::test_camera_api_validation_removal_and_release`, `test_multicamera.py::test_incidents_are_tagged_and_deduplicated_per_camera`
 
 ### Detection
 
@@ -433,6 +448,7 @@ Development is spec-first. Every behavior has a requirement with a stable ID, te
 - `GET /api/state` returns session, camera health (`analysis_fps`, `detector`), incidents, events and overlays.
 - `POST /api/frames` returns `{accepted, overlays}`.
 - `POST /api/source` and `GET /api/camera/frame` (SRC-4 server camera).
+- `GET /api/cameras`, `POST /api/cameras`, `DELETE /api/cameras/{id}`, and `GET /api/camera/frame?camera=<id>` (SRC-5).
 - `POST /api/incidents/{id}/{acknowledge|resolve|dismiss|decline}`
 - `PUT /api/settings`
 - `POST /api/video`
@@ -459,11 +475,11 @@ Each milestone ends with the full suite green, traceability enforced, a live che
 | **M6 · Measure** (harness done) | EVAL-1 | Accuracy table on the team's staged clips, in the README. The harness is built and validated; the team's clips are still to be recorded. |
 | **M7 · Demo** (script and docs done) | — | Rehearsed 2-minute script ([DEMO.md](DEMO.md)); backup video recorded (team, on site); README sponsor sections |
 
-**Add-ons, only after M4:** DET-10 unsupervised child, SRC-4 server capture (done), ESP32 wrist buzzer as a third acknowledgment channel, and the Apify recall checker.
+**Add-ons, only after M4:** DET-10 unsupervised child, SRC-4 server capture (done), SRC-5 several server cameras (done), ESP32 wrist buzzer as a third acknowledgment channel, and the Apify recall checker.
 
 ## Out of scope
 
-Diagnosing choking, seizures or injury; breathing or airway monitoring; face, identity or age recognition; automatic emergency-service calls; parent mass notifications; custom model training; native mobile apps; running more than one room per server.
+Diagnosing choking, seizures or injury; breathing or airway monitoring; face, identity or age recognition; automatic emergency-service calls; parent mass notifications; custom model training; native mobile apps; more than 4 cameras per server, and per-camera zones or calibration for cameras other than cam-01.
 
 ## Open questions
 

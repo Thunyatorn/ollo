@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, PlainTextResponse, Response as RawRe
 from typing import Literal
 
 from pydantic import BaseModel, Field
-from .store import KINDS, Store, uid
+from .store import KINDS, PRIMARY_CAMERA, Store, uid
 from .providers import Calls, ready, allowed_numbers, token_hash
 from .rules import DEFAULT_MODEL, draft_rule, validate_landmark
 from .clips import ClipRecorder, blur_jpeg, prune, write_clip
@@ -30,7 +30,42 @@ vision=None
 vision_state={'overlays':[],'health':{'tracking':'paused','review':'disabled'},'limitations':[]}
 processing=False
 recorder=ClipRecorder()
-capture=None  # SRC-4 server camera, when that is the source.
+capture=None  # SRC-4 server camera, when that is the source. It is always cam-01.
+MAX_CAMERAS=4  # SRC-5: cam-01 plus up to three more server cameras.
+
+
+class Feed:
+    """SRC-5: an additional server camera with its own capture, tracker and rule state, clip buffer and incidents."""
+
+    def __init__(self,identifier,source,room_label,engine):
+        self.id,self.source,self.room_label,self.label=identifier,source,room_label,mask(source)
+        self.vision,self.recorder,self.capture=engine,ClipRecorder(),None
+        self.state={'overlays':[],'health':{'tracking':'paused','review':'disabled'}}
+        self.processing,self.frame_seq,self.last_frame_at=False,-1,None
+
+    @property
+    def camera(self):return {'id':self.id,'room':self.room_label}
+
+
+feeds={}  # cam-02… → Feed, in the order they were added.
+retired=[]  # Stopped feeds whose clips in progress still need finalizing.
+
+
+def extra_settings(settings):
+    """Zones, calibration and plain-language rules are drawn on cam-01's picture, so other cameras never inherit them."""
+    extra={k:v for k,v in settings.items() if k not in ('calibration','rules','landmarks')}
+    extra['zone']={**(settings.get('zone') or {}),'enabled':False}
+    return extra
+
+
+def configure_vision(settings):
+    if vision:vision.configure(settings)
+    for feed in feeds.values():feed.vision.configure(extra_settings(settings))
+
+
+def reset_vision():
+    if vision:vision.reset()
+    for feed in feeds.values():feed.vision.reset();feed.state={'overlays':[],'health':{'tracking':'paused','review':'disabled'}}
 
 
 def caregiver_name(step):
@@ -77,8 +112,9 @@ async def save_clip(incident_id,frames):
 
 async def flush_clips():
     """Session changes finalize clips in progress with the frames they have."""
-    for incident_id,frames in recorder.flush():
+    for incident_id,frames in [c for r in [recorder,*(f.recorder for f in feeds.values()),*(f.recorder for f in retired)] for c in r.flush()]:
         await save_clip(incident_id,frames)
+    retired.clear()
 
 
 async def retention():
@@ -145,6 +181,20 @@ def floor_plan():
     return {'points':[p['floor'] for p in cal.points],'zones':[{'id':z['id'],'name':z['name'],'polygon':meters(z['polygon'])} for z in vision.active if z['floor'] is not None],'landmarks':[l for l in landmarks if l['polygon']]}
 
 
+def feed_summary(feed,session):
+    camera=feed.capture.status()
+    last=feed.last_frame_at
+    health='offline' if camera['status']=='offline' else 'active' if last and time.time()-last<3 and session['status']=='active' else 'degraded' if session['status']=='active' else session['status']
+    return {'id':feed.id,'room_label':feed.room_label,'health':health,'last_frame_at':last,'tracking':feed.state.get('health',{}).get('tracking','paused'),'detector':feed.vision.detector,'analysis_fps':feed.vision.analysis_fps(),'people':len(feed.state.get('overlays',[])),'capture':camera,'primary':False}
+
+
+def cameras(primary=None):
+    """SRC-5: every camera this server analyzes, cam-01 first."""
+    session=store.get('session')
+    primary=primary or state()['camera']
+    return [{**{k:primary.get(k) for k in ('id','room_label','health','last_frame_at','tracking','detector','analysis_fps','capture')},'people':len(vision_state.get('overlays',[])),'primary':True}]+[feed_summary(feeds[k],session) for k in sorted(feeds)]
+
+
 def state():
     session=store.get('session'); settings=store.get('settings'); last=session.get('last_frame_at')
     camera=capture.status() if capture else None
@@ -152,7 +202,9 @@ def state():
     lost=session.get('source_type')=='server_camera' and (not camera or camera['status']=='offline')
     health='offline' if session.get('forced_offline') or lost else ('active' if last and time.time()-last<3 and session['status']=='active' else 'degraded' if session['status']=='active' else session['status'])
     caregivers=[{'id':'primary','name':settings.get('primary_name','Maya Chen'),'role':'Primary caregiver','phone_last4':allowed_numbers()[0][-4:] if allowed_numbers() else None},{'id':'backup','name':settings.get('backup_name','James Wilson'),'role':'Backup caregiver','phone_last4':allowed_numbers()[-1][-4:] if allowed_numbers() else None}]
-    return {'session':session,'camera':{'id':'cam-01','room_label':settings['room_label'],'health':health,'last_frame_at':last,'tracking':vision_state.get('health',{}).get('tracking','paused'),'review':vision_state.get('health',{}).get('review','disabled'),'detector':vision.detector if vision else 'pending','analysis_fps':vision.analysis_fps() if vision else 0.0,'predictive':vision._predictive_status() if vision else 'needs calibration','capture':camera},'incidents':[i for i in store.incidents() if i['session_id']==session['id']],'caregivers':caregivers,'events':store.events(),'settings':settings,'overlays':vision_state.get('overlays',[]),'analysis':vision_state,'attempts':[a for a in store.attempts() if (store.incident(a['incident_id']) or {}).get('session_id')==session['id']],'call_provider':{'configured':ready(),'mode':'real' if session['calls_armed'] and ready() else 'simulation'},'floor_plan':floor_plan(),'server_time':time.time()}
+    result={'session':session,'camera':{'id':PRIMARY_CAMERA,'room_label':settings['room_label'],'health':health,'last_frame_at':last,'tracking':vision_state.get('health',{}).get('tracking','paused'),'review':vision_state.get('health',{}).get('review','disabled'),'detector':vision.detector if vision else 'pending','analysis_fps':vision.analysis_fps() if vision else 0.0,'predictive':vision._predictive_status() if vision else 'needs calibration','capture':camera},'incidents':[i for i in store.incidents() if i['session_id']==session['id']],'caregivers':caregivers,'events':store.events(),'settings':settings,'overlays':vision_state.get('overlays',[]),'analysis':vision_state,'attempts':[a for a in store.attempts() if (store.incident(a['incident_id']) or {}).get('session_id')==session['id']],'call_provider':{'configured':ready(),'mode':'real' if session['calls_armed'] and ready() else 'simulation'},'floor_plan':floor_plan(),'server_time':time.time()}
+    result['cameras']=cameras(result['camera'])
+    return result
 
 
 @app.get('/api/state')
@@ -176,7 +228,7 @@ async def scenario(body:Scenario):
     if session['source_type']!='fixture':
         session['epoch']+=1;session['frame_seq']=-1;session['calls_armed']=False
         store.put('session',session)
-        if vision:vision.reset()
+        reset_vision()
         await cancel_calls()
     session['source_type']='fixture'; session['forced_offline']=body.scenario=='offline';store.put('session',session)
     if body.scenario in ('boundary','distress'):
@@ -236,7 +288,7 @@ async def incident_action(identifier:str,action:str,body:Action=Action()):
 async def reset():
     global vision_state
     stop_capture(); await flush_clips(); store.reset(); await cancel_calls(); vision_state={'overlays':[],'health':{'tracking':'paused','review':'disabled'}}
-    if vision:vision.reset()
+    reset_vision()
     return state()
 
 
@@ -257,8 +309,12 @@ class Source(BaseModel):
 
 
 def stop_capture():
+    """Stop every server camera: cam-01 and all SRC-5 cameras."""
     global capture
     if capture:capture.stop();capture=None
+    for feed in feeds.values():
+        feed.capture.stop();retired.append(feed)
+    feeds.clear()
 
 
 def start_capture(source):
@@ -266,7 +322,7 @@ def start_capture(source):
     global capture
     stop_capture()
     def changed(status):
-        message=f'Camera live · {current.label}' if status=='live' else f'Camera offline · {current.error or "no new frames for 2 s"} · reconnecting'
+        message=f'Camera live · {current.label}' if status=='live' else f'Camera offline · {current.label} · {current.error or "no new frames for 2 s"} · reconnecting'
         with store.db:store.event('camera_online' if status=='live' else 'camera_offline',message)
     current=capture=CameraCapture(source,submit_captured,on_status=changed)
     capture.start()
@@ -287,11 +343,75 @@ async def change_source(body:Source):
 
 
 @app.get('/api/camera/frame')
-async def camera_frame(after:int=-1):
-    """SRC-4 live picture: the analyzed JPEG with the overlays computed from it, so boxes match the picture."""
-    if not capture:raise HTTPException(404,'No server camera connected')
-    view=await capture.next_view(after,timeout=1.0)
+async def camera_frame(after:int=-1,camera:str=PRIMARY_CAMERA):
+    """SRC-4/SRC-5 live picture of one camera: the analyzed JPEG with the overlays computed from it, so boxes match the picture."""
+    source=capture if camera==PRIMARY_CAMERA else (feeds[camera].capture if camera in feeds else None)
+    if not source:raise HTTPException(404,'No server camera connected' if camera==PRIMARY_CAMERA else f'No camera {camera}')
+    view=await source.next_view(after,timeout=1.0)
     return view if view else RawResponse(status_code=204)
+
+
+def submit_feed_frame(feed,data):
+    """SRC-5: the same ordering rules as SRC-3, per camera. Busy, paused or stale frames are skipped, never queued."""
+    session=store.get('session')
+    if feed.processing or session['status']!='active' or data['session_id']!=session['id'] or data['epoch']!=session['epoch'] or data['frame_seq']<=feed.frame_seq:return None
+    feed.frame_seq,feed.last_frame_at,feed.processing=data['frame_seq'],time.time(),True
+    return asyncio.create_task(process_frame(data,feed))
+
+
+def feed_submitter(feed):
+    async def submit(image,frame_seq,media_time_ms):
+        session=store.get('session')
+        task=submit_feed_frame(feed,{'session_id':session['id'],'epoch':session['epoch'],'frame_seq':frame_seq,'media_time_ms':media_time_ms,'image':image})
+        if task is None:return None
+        result=await asyncio.shield(task)
+        return result.get('overlays',[]) if result else None
+    return submit
+
+
+class CameraBody(BaseModel):
+    camera:int|str
+    room_label:str|None=Field(default=None,max_length=200)
+
+
+@app.get('/api/cameras')
+async def list_cameras():return {'cameras':cameras()}
+
+
+@app.post('/api/cameras')
+async def add_camera(body:CameraBody):
+    """SRC-5: add another server camera to the running server-camera session, without resetting it."""
+    if store.get('session').get('source_type')!='server_camera' or not capture:raise HTTPException(409,'Connect the first server camera (Settings → Manage source) before adding more')
+    try:source=parse_camera(body.camera)
+    except ValueError as exc:raise HTTPException(422,str(exc))
+    if 1+len(feeds)>=MAX_CAMERAS:raise HTTPException(409,f'At most {MAX_CAMERAS} cameras per server')
+    if source==capture.source or any(f.source==source for f in feeds.values()):raise HTTPException(409,'That camera is already connected')
+    identifier=next(f'cam-{i:02d}' for i in range(2,MAX_CAMERAS+1) if f'cam-{i:02d}' not in feeds)
+    label=(body.room_label or '').strip() or f'Camera {identifier[-2:]}'
+    if len(label)>80:raise HTTPException(422,'Invalid room name')
+    from .vision import VisionEngine
+    feed=Feed(identifier,source,label,VisionEngine(extra_settings(store.get('settings'))))
+    feed.vision.on_review=lambda kind,review,camera_id=identifier:store.annotate(kind,review,camera_id)
+    def changed(status):
+        message=f'Camera live · {label} · {feed.label}' if status=='live' else f'Camera offline · {label} · {feed.capture.error or "no new frames for 2 s"} · reconnecting'
+        with store.db:store.event('camera_online' if status=='live' else 'camera_offline',message)
+    feeds[identifier]=feed
+    feed.capture=CameraCapture(source,feed_submitter(feed),on_status=changed)
+    feed.capture.start()
+    asyncio.get_running_loop().run_in_executor(None,feed.vision.warm)  # Load weights off the event loop.
+    with store.db:store.event('camera_added',f'Camera added · {identifier} · {label} · {feed.label}')
+    return state()
+
+
+@app.delete('/api/cameras/{identifier}')
+async def remove_camera(identifier:str):
+    if identifier==PRIMARY_CAMERA:raise HTTPException(409,'cam-01 is the session source; choose another source to stop it')
+    feed=feeds.pop(identifier,None)
+    if not feed:raise HTTPException(404,'Camera not found')
+    feed.capture.stop()
+    for incident_id,frames in feed.recorder.flush():await save_clip(incident_id,frames)
+    with store.db:store.event('camera_removed',f'Camera removed · {identifier} · {feed.room_label}')
+    return state()
 
 
 @app.post('/api/session/{action}')
@@ -311,7 +431,7 @@ async def session_action(action:str):
         with store.db:store.db.execute("UPDATE jobs SET status='canceled' WHERE status='queued'")
         await cancel_calls()
     store.put('session',session)
-    if vision:vision.reset()
+    reset_vision()
     return state()
 
 
@@ -341,7 +461,7 @@ def settings(body:dict):
     area=abs(sum(vertices[i][0]*vertices[(i+1)%len(vertices)][1]-vertices[(i+1)%len(vertices)][0]*vertices[i][1] for i in range(len(vertices))))/2
     if area<.001:raise HTTPException(422,'Zone must enclose an area')
     store.put('settings',current)
-    if vision:vision.configure(current)
+    configure_vision(current)
     return state()
 
 
@@ -359,7 +479,7 @@ def claude_client():
 def save_settings(current,event_type,message):
     store.put('settings',current)
     with store.db:store.event(event_type,message)
-    if vision:vision.configure(current)
+    configure_vision(current)
     return state()
 
 
@@ -431,7 +551,7 @@ def calibrate(body:CalibrationBody):
     current=store.get('settings');current['calibration']=calibration.as_dict();store.put('settings',current)
     ignored=f' · {len(calibration.ignored)} point(s) ignored' if calibration.ignored else ''
     with store.db:store.event('calibration_saved',f'Floor calibration saved · average error {calibration.error_m:.2f} m{ignored}')
-    if vision:vision.configure(current)
+    configure_vision(current)
     return state()
 
 
@@ -439,7 +559,7 @@ def calibrate(body:CalibrationBody):
 def uncalibrate():
     current=store.get('settings');current.pop('calibration',None);store.put('settings',current)
     with store.db:store.event('calibration_cleared','Floor calibration removed · predictive warnings off')
-    if vision:vision.configure(current)
+    configure_vision(current)
     return state()
 
 
@@ -505,31 +625,34 @@ class Frame(BaseModel):
     image:str=Field(max_length=3000000)
 
 
-async def process_frame(frame):
+async def process_frame(frame,feed=None):
+    """Analyze one frame. `feed` is an SRC-5 camera with its own engine, clip buffer and incident tag; None is cam-01."""
     global vision_state,processing
+    engine,clips=(feed.vision,feed.recorder) if feed else (vision,recorder)
     try:
-        result=await vision.process_frame(frame)
+        result=await engine.process_frame(frame)
         session=store.get('session')
         if session['id']!=frame['session_id'] or session['epoch']!=frame['epoch']:return None
-        vision_state=result
+        if feed:feed.state=result
+        else:vision_state=result
         people=result.get('overlays',[])
         jpeg=base64.b64decode(frame['image'].split(',')[-1]) if frame.get('image') else b''
-        finished=recorder.add(frame['media_time_ms'],jpeg,people) if jpeg else []
+        finished=clips.add(frame['media_time_ms'],jpeg,people) if jpeg else []
         for observation in result.get('observations',[]):
             kind=observation.get('kind')
             if kind=='review':
-                store.annotate(observation['target_kind'],observation['review'])
+                store.annotate(observation['target_kind'],observation['review'],feed.id if feed else PRIMARY_CAMERA)
             elif kind=='approach':
                 # A pre-warning is transient: history only, never an incident or a call.
                 with store.db:store.event('approach_warning',observation['observations'][0])
             elif kind in KINDS:
-                incident=store.observe(kind,observation.get('observations',[]),observation.get('origin','local_rule'),observation.get('priority','high'))
+                incident=store.observe(kind,observation.get('observations',[]),observation.get('origin','local_rule'),observation.get('priority','high'),camera=feed.camera if feed else None)
                 if 'media_time_ms' not in incident:
                     incident['media_time_ms']=frame['media_time_ms']
-                    incident['source_key']=session.get('media_id') if session['source_type']=='recorded' else session['source_type']
+                    incident['source_key']=feed.id if feed else session.get('media_id') if session['source_type']=='recorded' else session['source_type']
                     with store.db:store.save_incident(incident)
                 if jpeg and not incident.get('clip_requested') and incident['status']=='open':
-                    recorder.start(incident['id'],frame['media_time_ms']);incident['clip_requested']=True
+                    clips.start(incident['id'],frame['media_time_ms']);incident['clip_requested']=True
                     with store.db:store.save_incident(incident)
                 if not incident.get('evidence_url'):
                     evidence=observation.get('evidence_image') if observation.get('origin')=='model' else frame['image']
@@ -541,8 +664,12 @@ async def process_frame(frame):
             await save_clip(incident_id,frames)
         return result
     except Exception as exc:
-        vision_state={'overlays':[],'health':{'tracking':'degraded','review':'degraded'},'limitations':['Analysis failed: '+type(exc).__name__]}
-    finally:processing=False
+        failed={'overlays':[],'health':{'tracking':'degraded','review':'degraded'},'limitations':['Analysis failed: '+type(exc).__name__]}
+        if feed:feed.state=failed
+        else:vision_state=failed
+    finally:
+        if feed:feed.processing=False
+        else:processing=False
 recorder=ClipRecorder()
 
 
