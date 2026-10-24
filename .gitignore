@@ -1,10 +1,25 @@
 node_modules/
+dist/
 .venv/
-__pycache__/
 .env
+__pycache__/
+*.pyc
+*.tsbuildinfo
+server/data/
+data/
+test-results/
+.DS_Store
+
+.env.*
+!.env.example
+.pytest_cache/
+
+# Local model weights (fetched with npm run models)
+models/
+
+# NestWatch Spacetime edition (vision/, worker/, spacetime/, web/, firmware/)
 *.pt
 clips/
-dist/
 weights/
 runs/
 *.mp4
@@ -12,14 +27,11 @@ runs/
 out/
 walk.png
 evidence/
-
 # never publish: login tokens and local databases
 tools/.vision-token
 *.token
 .stdb/
 spacetime/spacetime.local.json
-.DS_Store
-test-results/
 firmware/**/config.h
 worker/.worker-token
 worker/.env
