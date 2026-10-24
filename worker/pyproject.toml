@@ -1,0 +1,12 @@
+[project]
+name = "nestwatch-worker"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["anthropic>=2.3", "fastapi", "uvicorn[standard]", "httpx", "python-multipart", "pydantic"]
+
+[project.optional-dependencies]
+test = ["pytest", "pytest-asyncio", "twilio"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

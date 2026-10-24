@@ -16,6 +16,14 @@ Connect the full loop from **CCTV feed → real-time event analysis → notifica
 
 Built for Cal Hacks 13.0. [docs/SPEC.md](docs/SPEC.md) is the source of truth: requirements with IDs, acceptance criteria, the tests that verify each one, and the build plan. `server/tests/test_spec.py` fails the suite if the spec and tests disagree. Background research is in the [implementation specification](docs/IMPLEMENTATION_SPEC.md), and measured changes are in the [improvement log](docs/IMPROVEMENT_LOG.md).
 
+## Spacetime edition (a second build in this repository)
+
+Alongside this prototype the repository holds a second implementation of the same product, built on a SpacetimeDB backend with a
+Python vision service, a worker for calls and Claude, a wrist-buzzer simulator and firmware, and a dashboard and phone app of its own.
+It lives in separate folders (`spacetime/`, `vision/`, `worker/`, `web/`, `firmware/`, `tools/`, `packages/`) and shares no code with
+this one. Start with [README.spacetime.md](README.spacetime.md); the spec is [CLUADE.md](CLUADE.md), the math is [MATH.md](MATH.md), and
+the integration and failure-drill results are in [docs/INTEGRATION.md](docs/INTEGRATION.md).
+
 ## Run locally
 
 Requires Node.js 20.19+ and Python 3.12 (recommended). From this directory:
