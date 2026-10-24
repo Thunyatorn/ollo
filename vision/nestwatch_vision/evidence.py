@@ -120,6 +120,8 @@ class EvidenceRecorder:
             os.makedirs(d, exist_ok=True)
         self._faces = FaceDetector(self.cfg.face_model, self.cfg.face_thr, self.cfg.face_expand)   # raises if the model is missing
         self._trail = HeadTrail(self.cfg.trail_frames, self.cfg.blur_cells)
+        self._snap_faces = FaceDetector(self.cfg.face_model, self.cfg.face_thr, self.cfg.face_expand)   # its own instance: snapshots come from another thread
+        self._snap_lock = threading.Lock()
         self._ring: deque = deque()                                    # (t, jpeg bytes of a BLURRED frame)
         self._lock = threading.Lock()
         self._pending: list[tuple[str, float]] = []
@@ -142,6 +144,14 @@ class EvidenceRecorder:
             x1, y1, x2, y2 = head_box(p, frame.shape, self.cfg.head_floor)
             heads.append((int(x1 * scale), int(y1 * scale), min(sw, int(np.ceil(x2 * scale))), min(sh, int(np.ceil(y2 * scale)))))
         return self._trail.blur(small, heads + self._faces.boxes(small))
+
+    def blurred_full(self, frame: np.ndarray, people: list[Person]) -> np.ndarray:
+        """A blurred copy at FULL size, for the calibration snapshot: the pixels you click are the pixels the pipeline uses.
+        Same rules as saved clips (pose heads plus face detector). Safe to call from another thread."""
+        heads = [head_box(p, frame.shape, self.cfg.head_floor) for p in people]
+        with self._snap_lock:
+            boxes = heads + self._snap_faces.boxes(frame)
+        return HeadTrail(1, self.cfg.blur_cells).blur(frame, boxes)
 
     def add(self, frame: np.ndarray, t: float, people: list[Person]) -> bool:
         """Blur, shrink, compress and keep. Returns False (and keeps nothing) if anything goes wrong."""

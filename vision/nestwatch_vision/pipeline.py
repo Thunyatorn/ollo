@@ -10,6 +10,8 @@ import numpy as np
 from .calibration import jacobian, to_floor
 from .config import PipelineConfig, TrackerConfig
 from .cusum import CusumBank
+from .detectors.fall import FallConfig, FallDetector
+from .detectors.unsupervised import UnsupervisedConfig, evidence as supervision_evidence
 from .pose import Person, foot_point
 from .prediction import zone_evidence
 from .tracker import Detection, Track, Tracker
@@ -19,7 +21,7 @@ from .zones import ZoneCache
 @dataclass
 class Event:
     track_id: str
-    event_type: str                 # zone_entry_predicted | zone_entry
+    event_type: str                 # zone_entry_predicted | zone_entry | fall | unsupervised
     zone_id: str
     severity: str
     predicted_entry_s: float | None
@@ -46,6 +48,10 @@ class Pipeline:
         self.bank = CusumBank(self.cfg.cusum_k, self.cfg.cusum_h, self.cfg.cusum_cooldown_s)
         self.rng = rng or np.random.default_rng()
         self._foot_sigma = dict(self.cfg.foot_sigma_m)
+        self.fall = FallDetector(FallConfig())
+        self.sup_cfg = UnsupervisedConfig()
+        self.sup_bank = CusumBank(self.sup_cfg.k, self.sup_cfg.h, self.sup_cfg.cooldown_s)
+        self.adult_tagged = False               # the unsupervised check stays off until someone has been tagged as an adult
 
     def set_homography(self, H: np.ndarray | None) -> None:
         self.H = H
@@ -55,11 +61,14 @@ class Pipeline:
         for tr in self.tracker.tracks:
             if tr.id == track_id:
                 tr.tag = name
+                self.adult_tagged = True
                 return True
         return False
 
     # ---- one frame --------------------------------------------------------------------------------
-    def step(self, people: list[Person], t: float, now: datetime) -> StepResult:
+    def step(self, people: list[Person], t: float, now: datetime, everyone: list[Person] | None = None) -> StepResult:
+        """`people`: confident detections, for tracking. `everyone`: also the low-confidence ones, which the fall
+        detector uses (a person lying on the floor often scores low)."""
         res = StepResult()
         if self.H is None:                                      # uncalibrated camera: we can see people but not place them
             return res
@@ -81,6 +90,7 @@ class Pipeline:
         res.tracks = tracks
         for lost in self.tracker.newly_lost:
             self.bank.forget_track(lost.id)
+            self.sup_bank.forget_track(lost.id)
 
         active = set(z.id for z in self.zones.active(now))
         for tr in tracks:
@@ -98,4 +108,25 @@ class Pipeline:
                 if self.bank.update((tr.id, z.id), ev.e if ev else 0.0, t, armed=armed):
                     res.events.append(Event(f"t{tr.id}", "zone_entry" if ev.inside else "zone_entry_predicted", z.id, z.severity,
                                             None if ev.entry_s is None else round(ev.entry_s, 2), f"evt_{int(t * 1000)}_t{tr.id}", t))
+
+        # unsupervised child (MATH 8.4): only once adults are known
+        if self.adult_tagged:
+            adults = [tr.pos for tr in tracks if tr.tag is not None and tr.visible]
+            for tr in tracks:
+                if tr.tag is None and tr.visible:
+                    e = supervision_evidence(tr.pos, adults, self.sup_cfg)
+                    if self.sup_bank.update((tr.id, "unsupervised"), e, t):
+                        res.events.append(Event(f"t{tr.id}", "unsupervised", "", "medium", None, f"evt_{int(t * 1000)}_t{tr.id}", t))
+
+        # falls (MATH 8.1): detected in the picture, attached to the nearest tracked person on the floor
+        for f in self.fall.update(everyone if everyone is not None else people, t):
+            x1, _, x2, y2 = (float(v) for v in f.box)
+            xy = to_floor(self.H, ((x1 + x2) / 2, y2))
+            near = min(tracks, key=lambda tr: float(np.hypot(*(tr.pos - xy))), default=None)
+            if near is not None and float(np.hypot(*(near.pos - xy))) > 1.5:
+                near = None
+            if near is not None and near.tag is not None:
+                continue                                        # a tagged caregiver kneeling or lying down is not a child's fall
+            tid = near.id if near is not None else 0
+            res.events.append(Event(f"t{tid}", "fall", "", "high", None, f"evt_{int(t * 1000)}_t{tid}", t))
         return res

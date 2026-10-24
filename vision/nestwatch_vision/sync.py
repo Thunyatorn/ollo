@@ -101,6 +101,12 @@ class SpacetimeSink:
             self._events.append(("report_event", [track_id, event_type, zone_id, severity, _opt(predicted_entry_s), clip_ref]))
             self._cv.notify()
 
+    def reducer(self, name: str, args: list) -> None:
+        """Any reducer call, queued in order with the events and retried if the server is unreachable."""
+        with self._cv:
+            self._events.append((name, args))
+            self._cv.notify()
+
     def health(self, camera_id: str, status: str) -> None:
         with self._cv:
             self._events.append(("camera_health", [camera_id, status]))

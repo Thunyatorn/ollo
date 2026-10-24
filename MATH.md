@@ -657,33 +657,47 @@ Fall is a state machine, not CUSUM (section 8.1).
 
 Every detector produces a **stream of evidence** (or a state machine), then goes through the same rules: severity, cooldown, event type from the spec.
 
-### 8.1 Fall
+### 8.1 Fall (built and measured; `detectors/fall.py`)
 
-Features from keypoints (image space, so it depends on camera placement):
-
-```
-shoulder midpoint  m_s = (kp5 + kp6) / 2        hip midpoint  m_h = (kp11 + kp12) / 2
-torso vector       t   = m_h - m_s              L = |t|
-torso angle        theta = atan2( |t_x| , t_y )     0 deg = upright, 90 deg = horizontal, >90 = inverted
-box aspect         r = box_width / box_height       (upright < 0.6, lying > 1.2: start values)
-head drop speed    v_drop = ( y_head(t) - y_head(t - dt) ) / ( L * dt )    in torso-lengths per second, down is positive
-hip speed          s_hip = floor speed of the hip midpoint from the track, m/s
-```
-
-State machine:
+**The rule.** A fall is a FAST downward drop of the body followed by staying genuinely LOW or HORIZONTAL. Everything is
+measured in the person's own standing height, in the picture, so no calibration is needed:
 
 ```
-UPRIGHT --( theta rises by > 45 deg within 1 s  AND  v_drop > 1.0 L/s at some point )--> FALLING
-FALLING --( theta > 60 deg or r > 1.0, and s_hip < 0.15 m/s, for 1.5 s )-------------> fire "fall"
-FALLING --( back to theta < 30 deg within 1.5 s )----------------------------------> UPRIGHT   (child stumbled, recovered)
+drop : the top of the person's box moves down by >= 0.45 x standing height within 1.5 s
+low  : box height < 0.65 x standing height, or wider than tall (w/h > 1.1), or torso > 60 deg from vertical
+fall : low for >= 0.8 s, with the drop at most 3 s before the low phase began (or during it)
+       gaps in detection up to 0.5 s do not reset "low"; one alert per 10 s per person
 ```
 
-The 1.5 s lie-still confirmation is what separates a fall from a child who flops down to play. Children lying down to play never *fall* first, so they do not trigger it.
-Caveats:
-- A **ceiling camera** sees almost no torso; `theta` and `L` are unreliable. For those cameras use box aspect change, floor speed and box area change instead.
-- All thresholds above are **start values**. They need real footage.
-- The UR Fall Detection dataset (Kepski, University of Rzeszow; the page you linked) has 70 sequences, 30 falls and 40 daily-living activities, each with video and accelerometer data. It is licensed for **non-commercial academic use** (CC BY-NC-SA 4.0).
-  It is adults in a room, not children, so it tests the *pipeline* (does the state machine fire on real falls and stay quiet on bending and sitting), not child-specific thresholds. We should check its licence before using it for anything beyond development.
+Standing height is the median box height while clearly upright (torso under 30 deg, taller than 1.3 x wide).
+It uses low-confidence detections too (0.1): a person on the floor often scores low.
+**Order matters, found by testing:** the body tilts first (low by angle) and the top drops a moment later. My first
+version required the drop to come before the low phase and caught only 5% of real falls.
+
+**Measured on real footage: OmniFall labels on the GMDCSA24 videos** (4 adults, staged falls at home, 160 clips: 78 falls,
+82 everyday activities such as sitting down, lying down on purpose, walking). Same frames (12 fps, 640 px) and the same
+scoring as the team's evaluator (a hit is an alert 0 to 5 s after the labelled start of the fall).
+
+| Detector | Falls caught, all 160 | False alarms | Subject 4 only (17 falls, 20 everyday clips) | Delay |
+| --- | --- | --- | --- | --- |
+| Team's `server/events.py` (YOLO26n + ByteTrack) | 24 / 78 (31%) | 12 | 7 caught, 5 false alarms | 2.3 s |
+| Ours, untuned start values | 67 / 78 (86%) | 23 | 13 caught, 5 false alarms | — |
+| **Ours, tuned on Subjects 1 to 3** | **65 / 78 (83%)** | **10** | **9 caught, 3 false alarms** | **1.6 s** |
+
+How to read it honestly:
+- Subjects 1 to 3 were used for tuning, so "all 160" flatters ours. **Subject 4 is the only fair comparison**, and with
+  17 falls the intervals are wide (recall 31% to 74%).
+- On Subject 4 the tuned setting caught FEWER falls (9) than the untuned one (13). The best tuning settings were near-ties
+  and sat at the edge of the grid: a sign of fitting three people's way of falling. Choosing by the worst tuning subject
+  instead of the average gave the same setting. **Subject 4 is now used up as a test**; the next honest check needs
+  footage neither detector has seen (CAUCAFall, 10 people in homes, or your own clips).
+- **The pose model matters as much as the rule.** With the small model the person on the floor is still found in 89%
+  of frames (nano: 69%); clips where the fallen person is mostly invisible drop from 24 to 7. Half the team detector's
+  misses were the person being lost after the fall.
+- Adults only. Nothing here says how it behaves for children, who fall differently and are smaller.
+
+Tools: `scripts/cache_poses.py` (run the model once), `scripts/bench_falls.py` (score, tune with `--grid --robust`),
+`scripts/eval_clips.py` (the whole pipeline on labelled clips; it reproduces the benchmark exactly).
 
 ### 8.2 Climbing
 
@@ -704,16 +718,19 @@ event  = still continuously for T_still   (start value 90 s)
 
 Not during a **nap schedule** in a nap area: lying still then is normal. Outside nap hours or outside the nap zone it is the event. Severity: medium. This one also needs the schedule data from Spacetime.
 
-### 8.4 Unsupervised child
+### 8.4 Unsupervised child (built; `detectors/unsupervised.py`)
 
 ```
-d_a(c)   = distance from child c to the nearest visible adult, in meters (floor coordinates)
-e_t(c)   = sigmoid( ( d_a - R ) / w )          soft threshold: R = 2.0 m, w = 0.4 m   (start values)
-if no adult is visible at all: e_t = 1 (only if at least one caregiver is on duty)
+d_a(c)   = distance from child c to the nearest visible TAGGED adult, in meters on the floor
+e_t(c)   = 1 / (1 + exp(-(d_a - R) / w))      R = 2.0 m, w = 0.4 m          (1.0 if no tagged adult is in view)
+alert    : CUSUM with k = 0.5, h = 5 evidence-seconds (about 10 to 12 s alone), then 120 s cooldown; severity medium
 ```
 
-Then CUSUM with `k = 0.5, h = 5` (about 10 s of full evidence). Hysteresis comes free from CUSUM. A soft sigmoid instead of a hard cutoff avoids flapping when a child hovers at exactly `R`.
-Severity: medium. Weakness: an adult in a blind spot looks absent. The spec's second opinion (Claude looking at key frames) is meant to catch exactly this.
+**It stays off until someone has been tagged as an adult.** Adults are only known from the dashboard's tags; without
+one, every person counts as a child alone and it would alert on everybody after 10 s. Tested: a child 3 m from the tagged
+adult alerts once after about 10 to 12 s; a child 1 m away never does; with nobody tagged it never fires.
+Weakness: an adult standing in a blind spot looks absent. The worker's second opinion is meant to catch that. Not yet
+measured on real footage (needs a recording with tagged adults).
 
 ### 8.5 Possible distress
 

@@ -42,14 +42,18 @@ export default function Setup() {
   const [imgPts, setImgPts] = useState<P[]>([]);
   const [floorPts, setFloorPts] = useState<P[]>([]);
   const [snapOk, setSnapOk] = useState(true);
+  const [snapVersion, setSnapVersion] = useState(0);            // the picture stays still while you click; "New picture" refreshes it
+  const [calNote, setCalNote] = useState('');
   const imgRef = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
-    if (room) setFloorPts([{ x: 0, y: 0 }, { x: room.widthM, y: 0 }, { x: room.widthM, y: room.heightM }, { x: 0, y: room.heightM }]);
+    // 4 corners + 2 check points (wall midpoints): with only 4 points a mis-click cannot be detected (MATH.md 1.6)
+    if (room) setFloorPts([{ x: 0, y: 0 }, { x: room.widthM, y: 0 }, { x: room.widthM, y: room.heightM }, { x: 0, y: room.heightM },
+                           { x: room.widthM / 2, y: 0 }, { x: room.widthM / 2, y: room.heightM }]);
   }, [room?.id, room?.widthM, room?.heightM]);
 
   function clickImage(e: React.MouseEvent<HTMLImageElement>) {
-    if (imgPts.length >= 4) return;
+    if (imgPts.length >= floorPts.length) return;
     const img = e.currentTarget;
     const r = img.getBoundingClientRect();
     // store in the image's own pixel coordinates, which is what the vision service expects
@@ -59,17 +63,23 @@ export default function Setup() {
   }
 
   async function calibrate() {
+    setCalNote('');
     await guard(async () => {
       const res = await fetch(`${VISION_URL}/calibrate/${camId}`, {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ image_points: imgPts.map(p => [p.x, p.y]), floor_points: floorPts.map(p => [p.x, p.y]) }),
       });
-      if (!res.ok) throw new Error('The camera computer rejected the points.');
-      const out = await res.json() as { homography: number[][] | number[]; reprojection_error: number };
-      const flat = (out.homography as number[][]).flat ? (out.homography as number[][]).flat() : (out.homography as number[]);
-      await upsertCamera({ id: camId, roomId: room!.id, name: camName, homography: flat, blindSpots: [] });
+      const out = await res.json().catch(() => ({})) as {
+        ok?: boolean; homography?: number[][]; reprojection_error?: number; warnings?: string[]; bad_point?: number | null; detail?: string;
+      };
+      if (!res.ok || !out.ok || !out.homography) {
+        // the service explains itself: a named bad point, a degenerate layout, or bad input
+        throw new Error(out.detail ?? (out.warnings?.join(' ') || 'The camera computer rejected the points.'));
+      }
+      await upsertCamera({ id: camId, roomId: room!.id, name: camName, homography: out.homography.flat(), blindSpots: [] });
       setImgPts([]);
-      say(`Calibrated. Average error ${out.reprojection_error.toFixed(3)} m.`);
+      setCalNote(`Calibrated with ${floorPts.length} points: average error ${((out.reprojection_error ?? 0) * 100).toFixed(1)} cm.` +
+                 (out.warnings?.length ? ' Note: ' + out.warnings.join(' ') : ''));
     }, '');
   }
 
@@ -121,12 +131,12 @@ export default function Setup() {
             <div><label htmlFor="cm">Name</label><input id="cm" value={camName} onChange={e => setCamName(e.target.value)} /></div>
             <button className="btn secondary" style={{ alignSelf: 'end' }} onClick={() => guard(() => upsertCamera({ id: camId, roomId: room.id, name: camName, homography: [], blindSpots: [] }), 'Camera added.')}>Add camera</button>
           </div>
-          <p className="small muted">Click four spots on the floor in the camera picture, then enter where those spots are in the room (meters from the top-left corner). Use floor features you can measure, like tile corners.</p>
+          <p className="small muted">Put a taped marker on the floor at each point below, measure it (meters from the room's top-left corner), then click the markers in the picture in the same order. Six points let the computer catch a wrong click.</p>
           <div className="room-layout">
             <div>
               {snapOk ? (
                 <div style={{ position: 'relative' }}>
-                  <img ref={imgRef} src={`${VISION_URL}/snapshot/${camId}?t=${imgPts.length}`} alt="Camera view" onClick={clickImage} onError={() => setSnapOk(false)} onLoad={() => setSnapOk(true)} style={{ width: '100%', borderRadius: 12, cursor: 'crosshair' }} />
+                  <img ref={imgRef} src={`${VISION_URL}/snapshot/${camId}?v=${snapVersion}`} alt="Camera view" onClick={clickImage} onError={() => setSnapOk(false)} onLoad={() => setSnapOk(true)} style={{ width: '100%', borderRadius: 12, cursor: 'crosshair' }} />
                   {imgPts.map((p, i) => imgRef.current && (
                     <span key={i} style={{ position: 'absolute', left: `${(p.x / imgRef.current.naturalWidth) * 100}%`, top: `${(p.y / imgRef.current.naturalHeight) * 100}%`, transform: 'translate(-50%,-50%)', background: 'var(--brand)', color: 'var(--brand-ink)', borderRadius: 99, width: 22, height: 22, display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 800 }}>{i + 1}</span>
                   ))}
@@ -146,8 +156,17 @@ export default function Setup() {
                 </div>
               ))}
               <div className="row">
-                <button className="btn" disabled={imgPts.length !== 4} onClick={calibrate}>Calibrate</button>
-                <button className="btn secondary" onClick={() => setImgPts([])} disabled={!imgPts.length}>Reset points</button>
+                <button className="btn" disabled={imgPts.length !== floorPts.length || floorPts.length < 4} onClick={calibrate}>Calibrate</button>
+                <button className="btn secondary" onClick={() => setImgPts([])} disabled={!imgPts.length}>Reset clicks</button>
+                <button className="btn secondary" onClick={() => { setImgPts([]); setSnapVersion(v => v + 1); }}>New picture</button>
+              </div>
+              <div className="row">
+                <button className="btn secondary" disabled={floorPts.length >= 12} onClick={() => setFloorPts([...floorPts, { x: 0, y: 0 }])}>Add point</button>
+                <button className="btn secondary" disabled={floorPts.length <= 4} onClick={() => { setFloorPts(floorPts.slice(0, -1)); setImgPts(imgPts.slice(0, floorPts.length - 1)); }}>Remove last point</button>
+              </div>
+              <p className="small muted">{floorPts.length} points{floorPts.length < 6 ? ': with fewer than 6, a wrong click cannot be detected.' : '. The last two are check points: put markers there too.'}</p>
+              {calNote && <div className="card small" role="status">{calNote}</div>}
+              <div className="row">
               </div>
             </div>
           </div>

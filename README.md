@@ -46,8 +46,26 @@ cd vision
 .venv/bin/python scripts/live_pose.py 0
 ```
 
+The vision service also runs the local API on port 8000 (snapshot, calibrate, tag-adult, clips, key frames, health) and the
+wrist-buzzer WebSocket. It answers only on this computer by default; add `--host 0.0.0.0` so a tablet or phone on the daycare
+network can reach it (requests from outside private networks are refused). `--quiet-alarm` logs the local alarm instead of playing it.
+
+```bash
+curl http://127.0.0.1:8000/health                                                   # cameras, fps, buzzers, alarm
+.venv/bin/python scripts/fake_buzzer.py buzzer-maria --auto-ack-after 2             # a stand-in wrist buzzer that taps by itself
+```
+
 Clips and key frames are written to `vision/evidence/` (blurred, H.264, deleted after 7 days). Recording needs the face detector model `weights/face_detection_yunet_2023mar.onnx`
 (from `https://github.com/opencv/opencv_zoo`); without it the service refuses to record rather than save unblurred video. Use `--no-evidence` to run without saving clips.
+
+## Measuring the detectors on labelled clips (M9)
+
+```bash
+cd vision
+.venv/bin/python scripts/eval_clips.py clips/labels.json --split test                     # every event kind: hits, misses, false alarms
+.venv/bin/python scripts/eval_clips.py clips/labels.json --tune "fall.hold_s=0.5,0.8,1.2 cusum_h=0.15,0.2,0.3"   # tune on 'tune', report 'test'
+```
+The label format is in the script's header (same as the team's evaluator, plus optional calibration, zones and adult tags per clip).
 
 ## Tests
 
