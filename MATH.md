@@ -976,5 +976,7 @@ YOLO26s poses, the shipped `FallConfig` defaults, the team's scoring rule (hit =
 
 By kind: backwards 7/10, forward 9/10, left 7/10, right 9/10, sitting 5/10. False alarms: pick up object 6,
 kneel 4, sit down 2, forward-fall clip 1, hop 0, walk 0. Bending to the floor is the main confusion.
-The team's detector on the same clips: run in progress (`omnifall_caucafall/full_out`), not yet recorded.
+The team's detector on the same clips (their evaluator, their scoring): 15/50 caught (30%, 19-44%), 9 false alarms
+(precision 62%, 43-79%) on 8/50 everyday clips, mean delay 3.0 s. Ours catches more than twice as many falls; its
+false-alarm rate is a little higher (12/50 vs 8/50 everyday clips, intervals overlap).
 Rebuild: `scripts/make_caucafall_labels.py`, `scripts/cache_poses.py`, `BENCH_DATA=.../omnifall_caucafall scripts/bench_falls.py`.
