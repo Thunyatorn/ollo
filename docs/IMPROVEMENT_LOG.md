@@ -337,3 +337,27 @@ The CPU figure is for frames with no people in them; per-frame pose time barely 
 - Browser: `test:ui`, `test:media`, `test:design` and the new `test:camera` all pass.
 
 **Not verified.** A physical webcam and a real RTSP camera. The HTTP MJPEG test uses the same OpenCV FFmpeg path, but RTSP transport (UDP vs TCP, camera-specific codecs) is untested. The `npm start` that was already running when this work began still runs the earlier API code until it is restarted.
+
+## SRC-5: several server cameras, and real footage to analyze (2026-10-24)
+
+**Bottleneck.** One camera per server, and no reliable live footage: the team had a webcam, uploads and an illustration.
+
+**Change.**
+- `server/app.py`: `cam-01` stays the SRC-4 source; `POST/DELETE/GET /api/cameras` add up to three more, each with its own capture, `VisionEngine`, clip buffer and busy flag. `GET /api/camera/frame?camera=`. Incidents carry `camera_id` and the camera's room; dedupe and second opinions are per camera. Zones, rules and calibration stay on cam-01.
+- `server/store.py`: reads take the store lock. Three capture loops sharing one SQLite connection with the threadpool produced `sqlite3.InterfaceError: bad parameter or other API misuse` in the first multi-camera test.
+- Dashboard: the camera picker switches the stage among live cameras; the Focus/Grid strip shows each other camera's live picture with boxes and rates, plus an add/remove tile (`src/LiveCameras.tsx`).
+- `scripts/cameras/`: MediaMTX config, demo-room builder (GMDCSA24), public-webcam relay (streamlink → ffmpeg → RTSP), `connect_demo.py`.
+
+**Found while testing the relays.** HLS arrives in segment-sized bursts. Copied straight into RTSP, OpenCV saw ~44 fps bursts and multi-second gaps, and one stream failed to open within SRC-4's 5 s open timeout. `-re` in the relay restored a steady 30 fps with a largest gap of 0.08–0.11 s (12 s sample, three streams).
+
+**Measured live** (Mana sandbox, real OpenCV + YOLO26n-pose, three RTSP feeds from MediaMTX, 60 s windows):
+
+| Camera | Delivered | Analyzed (median) | People tracked |
+|---|---|---|---|
+| cam-01 daycare (recorded GMDCSA24 loop) | 15.0 fps | 5.2 fps | 1 in 97% of samples; **Possible fall** opened, evidence clip saved, call simulated |
+| cam-02 Bourbon St (EarthCam, live) | 30.0 fps | 5.3 fps | 0–3, present in 60% of samples |
+| cam-03 Times Square (EarthCam, live) | 30.0 fps | 5.6 fps | 0–2 of dozens visible |
+
+The sandbox has a 4-core CPU quota shared with other processes; it was throttled in 92% of scheduler periods during the window (API alone 3.2 cores), and pose took ~180–300 ms per frame there, versus ~38 ms on a team laptop (D-1). Three cameras at 12 fps need about 3 × 12 × 38 ms ≈ 1.4 cores of pose plus decoding: plausible on a laptop, not yet measured there. Times Square briefly flapped offline/online under throttling.
+
+**Detection finding.** Wide public views are transport tests, not detection tests: at 640 px, people in the Times Square crowd are 20–40 px tall and mostly missed, and Bourbon Street catches only people near the balcony. Daycare-like detection needs a camera where a person is at least ~100 px tall at 640 px, i.e. a room camera, which is what the recorded demo room and staged phone cameras provide.

@@ -49,7 +49,8 @@ The frontend also supports a clearly labeled local demonstration when the API is
 
 The 2-minute live script, setup checklist, fallbacks and Q&A are in [docs/DEMO.md](docs/DEMO.md). Without any credentials, everything except real calls and Claude features runs offline:
 
-1. Upload a recorded clip, start the browser webcam, or connect a camera the server reads itself (Settings → Manage source: a webcam index such as `0`, or an `rtsp://` or `http://` stream URL). With the server camera, analysis keeps running when the dashboard tab is hidden or closed (SRC-4).
+1. Upload a recorded clip, start the browser webcam, or connect a camera the server reads itself (Settings → Manage source: a webcam index such as `0`, or an `rtsp://` or `http://` stream URL). With the server camera, analysis keeps running when the dashboard tab is hidden or closed (SRC-4). Add up to three more server cameras with the **Add a camera** tile in the Focus or Grid layout (SRC-5).
+   For live footage without hardware, `scripts/cameras/start.sh` serves a looped staged demo room and relayed public webcams as RTSP cameras, and `scripts/cameras/connect_demo.py` connects three of them ([scripts/cameras/README.md](scripts/cameras/README.md)).
 2. Calibrate the floor (ruler button) and draw a landmark (shield button).
 3. Use Settings → demo scenarios for fixture incidents.
 4. Acknowledge and resolve incidents in the event trace, open a Report, and try `/respond/{id}` on a phone-sized window.
@@ -126,7 +127,7 @@ Sponsor use is listed above. Spec decisions and their "revisit if" conditions ar
 
 ## Verified in this workspace
 
-- `pytest`: 71 tests, each named in [docs/SPEC.md](docs/SPEC.md); `test_spec.py` fails if the spec and tests disagree.
+- `pytest`: 75 tests, each named in [docs/SPEC.md](docs/SPEC.md); `test_spec.py` fails if the spec and tests disagree.
 - Browser (Playwright): `test:ui`, `test:media`, `test:design` and `test:camera` all pass.
 - Production TypeScript/Vite build.
 - Live checks in a browser, recorded in [docs/IMPROVEMENT_LOG.md](docs/IMPROVEMENT_LOG.md):
@@ -137,6 +138,8 @@ Sponsor use is listed above. Spec decisions and their "revisit if" conditions ar
   - face-blurred evidence clips and reports
   - "Handled by" ownership
 - Evaluation harness on real YOLO output. It caught and fixed a ground-point bias.
+
+- Three live server cameras at once (SRC-5) through real OpenCV and YOLO pose: a looped staged clip and two relayed EarthCam webcams, each delivered at 15–30 fps and analyzed at 5–6 fps on a CPU-throttled 4-core sandbox (improvement log, SRC-5).
 
 **Not verified:** real Claude responses (no API key here; all Claude paths are tested with fakes), real Cartesia or Twilio calls, detection accuracy on children, a real RTSP camera or physical webcam through server capture (tested with a generated HTTP MJPEG stream through the same OpenCV path), and remote caregiver authentication. With a browser source (upload or browser webcam), analysis slows when the dashboard tab is hidden; the server camera does not.
 

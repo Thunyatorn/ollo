@@ -16,3 +16,7 @@ test-results/
 
 # Local model weights (fetched with npm run models)
 models/
+
+# Development cameras (scripts/cameras)
+scripts/cameras/.bin/
+scripts/cameras/media/

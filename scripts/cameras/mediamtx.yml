@@ -1,0 +1,50 @@
+# MediaMTX config for NestWatch development and demo cameras (scripts/cameras/README.md).
+# Start with scripts/cameras/start.sh from the repository root (paths below are relative to it).
+# Each path becomes rtsp://<this machine>:8554/<path>; add it in the dashboard (Settings → Cameras).
+logLevel: info
+
+rtspAddress: :8554
+rtspTransports: [tcp]          # TCP only: no UDP port juggling through NAT, Wi-Fi or Docker.
+rtmpAddress: :1935             # Phones (Larix, IP Camera Lite) can push here: rtmp://<laptop>:1935/phone
+hlsAddress: :8888              # Watch any path in a browser: http://<laptop>:8888/daycare
+webrtcAddress: :8889           # A phone browser can publish: http://<laptop>:8889/phone/publish (see README)
+srtAddress: :8890
+moq: no                        # Not needed; it would also write auto.key/auto.crt into the repository root.
+
+# Only this machine and private networks may read or publish. Do not port-forward this server.
+authInternalUsers:
+  - user: any
+    pass:
+    ips: [127.0.0.1/32, ::1/128, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10]
+    permissions:
+      - action: publish
+      - action: read
+      - action: playback
+  - user: any
+    pass:
+    ips: [127.0.0.1/32, ::1/128]
+    permissions:
+      - action: api
+
+api: true                      # http://127.0.0.1:9997/v3/paths/list shows which cameras are live.
+
+paths:
+  # Simulated indoor camera: a dataset clip looped forever (make_demo_room.py builds it).
+  daycare:
+    runOnInit: ffmpeg -hide_banner -loglevel error -re -stream_loop -1 -i scripts/cameras/media/demo_room.mp4 -c copy -an -rtsp_transport tcp -f rtsp rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH
+    runOnInitRestart: yes
+
+  # Intentionally public live webcams (EarthCam), relayed so tokenized URLs refresh on restart.
+  bourbon:
+    runOnInit: bash scripts/cameras/relay_public.sh https://www.earthcam.com/usa/louisiana/neworleans/bourbonstreet/
+    runOnInitRestart: yes
+  timessquare:
+    runOnInit: bash scripts/cameras/relay_public.sh https://www.earthcam.com/usa/newyork/timessquare/?cam=tsstreet
+    runOnInitRestart: yes
+  dublin:
+    runOnDemand: bash scripts/cameras/relay_public.sh https://www.earthcam.com/world/ireland/dublin/?cam=templebar
+    runOnDemandRestart: yes
+    runOnDemandStartTimeout: 20s
+
+  # Anything else (phone, a laptop webcam, a staged clip) can publish to any other name.
+  all_others:
