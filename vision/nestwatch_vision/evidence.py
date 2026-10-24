@@ -112,8 +112,9 @@ class HeadTrail:
 
 
 class EvidenceRecorder:
-    def __init__(self, cfg: EvidenceConfig | None = None):
+    def __init__(self, cfg: EvidenceConfig | None = None, on_written=None):
         self.cfg = cfg or EvidenceConfig()
+        self.on_written = on_written                                   # called with (clip_ref, [key frame jpegs]) after a clip is saved
         self.clips_dir = os.path.join(self.cfg.dir, "clips")
         self.keyframes_dir = os.path.join(self.cfg.dir, "keyframes")
         for d in (self.clips_dir, self.keyframes_dir):
@@ -221,11 +222,15 @@ class EvidenceRecorder:
         finally:
             vw.release()
         os.replace(tmp, path)                                                          # a clip appears whole or not at all
+        keys = []
         for n, when in enumerate(np.linspace(t - 1.0, t + min(1.5, self.cfg.seconds_after), self.cfg.keyframes), start=1):
             _, b = min(frames, key=lambda f: abs(f[0] - when))
             with open(os.path.join(self.keyframes_dir, f"{ref}_{n}.jpg"), "wb") as fh:
                 fh.write(b)                                                            # already blurred and compressed
+            keys.append(b)
         self.written.append(ref)
+        if self.on_written:
+            self.on_written(ref, keys)
 
     def wait(self, timeout: float = 10.0) -> bool:
         end = time.time() + timeout

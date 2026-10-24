@@ -7,6 +7,8 @@
 import argparse
 import itertools
 import logging
+import os
+import re
 import threading
 import time
 from datetime import datetime
@@ -21,6 +23,7 @@ from .local_api import Control, Latest, VisionContext, create_app
 from .capture import open_source
 from .config import EvidenceConfig, PipelineConfig, PoseConfig
 from .evidence import EvidenceRecorder
+from .uploader import KeyframeUploader
 from .pipeline import Pipeline
 from .pose import PoseModel
 from .sync import SpacetimeHttp, SpacetimeSink
@@ -103,6 +106,8 @@ def main(argv=None) -> None:
     ap.add_argument("--no-api", action="store_true", help="no local API, buzzers or alarm")
     ap.add_argument("--quiet-alarm", action="store_true", help="log the local alarm instead of playing it (for testing)")
     ap.add_argument("--max-seconds", type=float, default=0)
+    ap.add_argument("--worker-url", default=os.environ.get("WORKER_URL", ""), help="send blurred key frames of each event here (e.g. http://127.0.0.1:8787)")
+    ap.add_argument("--nap-time", default="12:30-14:30", help="local time window of the 'nap_time' schedule that rules can use")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
 
@@ -128,13 +133,18 @@ def main(argv=None) -> None:
     if H is None:
         log.error("camera '%s' is not calibrated: positions will not be sent. Run scripts/calibrate.py (or pass --demo-map)", a.camera)
 
-    zones = ZoneCache(named_schedules={})
+    nap = re.fullmatch(r"(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})", a.nap_time)
+    if not nap:
+        raise SystemExit("--nap-time must look like 12:30-14:30")
+    h1, m1, h2, m2 = map(int, nap.groups())
+    zones = ZoneCache(named_schedules={"nap_time": (h1 * 60 + m1, h2 * 60 + m2)})
     pipeline = Pipeline(room["width_m"], room["height_m"], H, zones, PipelineConfig())
     refresher = ZoneRefresher(client, zones, a.room)
     refresher.start()
     sink = None if a.dry_run else SpacetimeSink(client)
     pose = PoseModel(PoseConfig(weights=a.weights))
-    recorder = None if a.no_evidence else EvidenceRecorder(EvidenceConfig(dir=a.evidence_dir))   # raises if the face detector model is missing: no recording without it
+    uploader = KeyframeUploader(a.worker_url, token) if a.worker_url and not a.dry_run else None
+    recorder = None if a.no_evidence else EvidenceRecorder(EvidenceConfig(dir=a.evidence_dir), on_written=uploader)   # raises if the face detector model is missing: no recording without it
     log.info("room '%s' %.1f x %.1f m, pose model on %s, %s", a.room, room["width_m"], room["height_m"], pose.device, "dry run" if a.dry_run else "sending to Spacetime")
 
     # ---- local API, buzzers and the local alarm ----------------------------------------------------------
@@ -164,6 +174,7 @@ def main(argv=None) -> None:
                             for b, i in hub.info.items() if b in hub.connected()},
                 "alarm": {"active": alarm.active, "reasons": alarm.reasons()},
                 "evidence": None if recorder is None else {"buffered_frames": recorder.buffered_frames, "dropped_unblurred": recorder.dropped_unblurred},
+                "keyframes_to_worker": None if uploader is None else {"sent": uploader.sent, "failed": uploader.failed},
             })
         server = uvicorn.Server(uvicorn.Config(create_app(ctx), host=a.host, port=a.port, log_level="warning"))
         threading.Thread(target=server.run, daemon=True, name="api").start()

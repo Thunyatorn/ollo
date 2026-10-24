@@ -236,3 +236,17 @@ def test_old_clips_are_deleted_and_new_ones_kept(tmp_path):
     os.utime(old, (ten_days_ago, ten_days_ago))
     assert rec.cleanup() == 1 and not old.exists() and new.exists()
     rec.stop()
+
+
+def test_written_clip_hands_its_key_frames_to_the_uploader(tmp_path):
+    got = []
+    rec = EvidenceRecorder(EvidenceConfig(face_model=FACE_W, dir=str(tmp_path), seconds_before=1.0, seconds_after=1.0), on_written=lambda ref, keys: got.append((ref, keys)))
+    frame = np.full((480, 640, 3), 128, np.uint8)
+    for i in range(40):
+        rec.add(frame, i * 0.1, [])
+    rec.trigger("evt_20261024_t3", 2.0)
+    rec.tick(3.5)
+    assert rec.wait(10.0)
+    rec.stop()
+    (ref, keys), = got
+    assert ref == "evt_20261024_t3" and len(keys) == 3 and all(k.startswith(b"\xff\xd8") for k in keys)

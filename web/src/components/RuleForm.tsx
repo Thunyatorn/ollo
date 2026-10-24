@@ -6,12 +6,13 @@ import { loadToken } from '../lib';
 import FloorPlan from './FloorPlan';
 
 interface Draft {
-  zone_draft_id: string;
-  area_name: string;
+  zone_draft_id: string | null;
+  area_name: string | null;
   schedule: unknown;
-  severity: string;
-  escalation: string;
+  severity: string | null;
+  escalation: string | null;
   needs_drawing: boolean;
+  needs?: 'drawing' | 'detail';
   question: string | null;
 }
 
@@ -80,14 +81,18 @@ export default function RuleForm() {
         <div className="card"><h3>I need a drawing</h3><p>{draft.question ?? 'That place is not marked on the floor plan yet.'} Draw it in Setup, then try again.</p></div>
       )}
 
-      {draft && !draft.needs_drawing && (
+      {draft && !draft.needs_drawing && !draft.zone_draft_id && (
+        <div className="card"><h3>One more detail</h3><p>{draft.question ?? 'Please say where and when the rule applies.'} Add it to your text and try again.</p></div>
+      )}
+
+      {draft && !draft.needs_drawing && draft.zone_draft_id && (
         <div className="card stack">
           <h3>Here is the draft</h3>
-          <p><strong>{draft.area_name}</strong> — <span className={`pill ${draft.severity}`}>{draft.severity}</span> — {draft.escalation.replace(/_/g, ' ')}</p>
+          <p><strong>{draft.area_name}</strong> — <span className={`pill ${draft.severity}`}>{draft.severity}</span> — {(draft.escalation ?? '').replace(/_/g, ' ')}</p>
           {room && zone && <FloorPlan room={room} zones={[zone]} />}
           <p className="small muted">This rule does nothing until you confirm it.</p>
           {confirmed ? <span className="pill ok">Rule is on</span> : (
-            <button className="btn" disabled={!zone} onClick={async () => { try { await confirm({ zoneId: draft.zone_draft_id }); setConfirmed(true); } catch { setError('Could not confirm the rule.'); } }}>Confirm rule</button>
+            <button className="btn" disabled={!zone} onClick={async () => { try { await confirm({ zoneId: draft.zone_draft_id! }); setConfirmed(true); } catch { setError('Could not confirm the rule.'); } }}>Confirm rule</button>
           )}
         </div>
       )}

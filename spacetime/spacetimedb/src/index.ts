@@ -357,6 +357,16 @@ export const myCaregiver = spacetimedb.view(
   }
 );
 
+// This connection's role (zero or one row). The worker reads it with a caller's token to check who is calling it.
+export const myRole = spacetimedb.view(
+  { name: 'my_role', public: true },
+  t.array(principal.rowType),
+  ctx => {
+    const p = ctx.db.principal.identity.find(ctx.sender);
+    return p ? [p] : [];
+  }
+);
+
 // ---------- identity management ----------
 
 export const grantRole = spacetimedb.reducer(

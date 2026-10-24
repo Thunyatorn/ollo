@@ -66,6 +66,7 @@ import CameraRow from "./camera_table";
 import CaregiverRow from "./caregiver_table";
 import IncidentEventRow from "./incident_event_table";
 import MyCaregiverRow from "./my_caregiver_table";
+import MyRoleRow from "./my_role_table";
 import NamedAreaRow from "./named_area_table";
 import RecallMatchRow from "./recall_match_table";
 import ReportRow from "./report_table";
@@ -227,6 +228,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyCaregiverRow),
+  myRole: __table({
+    name: 'my_role',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyRoleRow),
   workerContacts: __table({
     name: 'worker_contacts',
     indexes: [

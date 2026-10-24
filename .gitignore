@@ -21,3 +21,7 @@ spacetime/spacetime.local.json
 .DS_Store
 test-results/
 firmware/**/config.h
+worker/.worker-token
+worker/.env
+worker/.venv/
+worker/.flows-*

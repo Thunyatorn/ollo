@@ -69,7 +69,7 @@ The label format is in the script's header (same as the team's evaluator, plus o
 
 ## Tests
 
-`cd vision && .venv/bin/python -m pytest` runs the vision tests (about 15 s). `spacetime/scripts/test-local.sh` checks the role rules and the alert state machine against a local server
+`cd vision && .venv/bin/python -m pytest` runs the vision tests (about 30 s); `cd worker && .venv/bin/python -m pytest` the worker tests; `worker/scripts/flows.py` drives the four end-to-end flows against a local stack. `spacetime/scripts/test-local.sh` checks the role rules and the alert state machine against a local server
 (see the header of the script for the setup it needs). It takes about a minute because it waits for the real escalation timers.
 
 ## Layout
@@ -82,4 +82,5 @@ The label format is in the script's header (same as the team's evaluator, plus o
 | `packages/shared/` | Shared message types |
 | `vision/` | The vision service (math in `MATH.md`) |
 | `weights/` | Pose model files (not in git) |
-| `worker/`, `firmware/` | Not built yet |
+| `worker/` | Worker: calls (simulated unless configured), Claude second opinions, rules, reports (see `worker/README.md`) |
+| `firmware/` | ESP32 wrist buzzer sketch (see `firmware/nestwatch_buzzer/README.md`) |

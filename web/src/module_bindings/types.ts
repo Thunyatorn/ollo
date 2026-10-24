@@ -95,6 +95,9 @@ export type IncidentEvent = __Infer<typeof IncidentEvent>;
 export const MyCaregiver = __t.object("MyCaregiver", {});
 export type MyCaregiver = __Infer<typeof MyCaregiver>;
 
+export const MyRole = __t.object("MyRole", {});
+export type MyRole = __Infer<typeof MyRole>;
+
 export const NamedArea = __t.object("NamedArea", {
   id: __t.string(),
   roomId: __t.string(),
