@@ -1,0 +1,22 @@
+node_modules/
+.venv/
+__pycache__/
+.env
+*.pt
+clips/
+dist/
+weights/
+runs/
+*.mp4
+!tests/fixtures/*.mp4
+out/
+walk.png
+evidence/
+
+# never publish: login tokens and local databases
+tools/.vision-token
+*.token
+.stdb/
+spacetime/spacetime.local.json
+.DS_Store
+test-results/

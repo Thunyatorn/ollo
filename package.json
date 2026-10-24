@@ -1,0 +1,7 @@
+{
+  "name": "nestwatch",
+  "private": true,
+  "scripts": {
+    "typecheck": "pnpm -r typecheck"
+  }
+}
