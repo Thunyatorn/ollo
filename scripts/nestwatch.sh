@@ -13,8 +13,8 @@
 # --calls    simulated  no real phone call is ever made                                                          [default]
 #            real       the worker places REAL calls (needs CALLS_ENABLED values in worker/.env); asks you to type yes
 # --loud-alarm  let the local alarm really sound (default: it is only logged, so testing does not blast the speaker)
-# --claude      keep Claude on with the demo (off by default there: the looping demo raises an alert every few seconds and
-#               each closed one would get a Claude-written report, about $0.01 each)
+# --no-claude   turn Claude off (the looping demo raises an alert every few seconds and each closed one gets a
+#               Claude-written report, about $0.01 each, billed to the API key in worker/.env)
 # --demo-map    stretch the picture over the room instead of using a calibration (positions are then not real)
 #
 # Needs the Spacetime server to be running already (`spacetime start`) and the module published to it.
@@ -66,7 +66,7 @@ cmd_start() {
       --calls) CALLS="${2:-}"; shift 2;;
       --loud-alarm) LOUD=1; shift;;
       --demo-map) DEMOMAP=1; shift;;
-      --claude) CLAUDE=on; shift;;
+      --no-claude) CLAUDE=off; shift;;
       *) say "Unknown option: $1"; exit 2;;
     esac
   done
@@ -85,7 +85,7 @@ cmd_start() {
   # worker (its settings come from worker/.env; for simulated calls the real-call switch is forced off)
   local WENV=""
   [ "$CALLS" = simulated ] && WENV="CALLS_ENABLED=false SIM_CALL_OUTCOME=${SIM_CALL_OUTCOME:-press1} SIM_RING_S=${SIM_RING_S:-4}"
-  if [ "$SOURCE" = demo ] && [ "$CLAUDE" != on ]; then WENV="$WENV CLAUDE_ENABLED=false"; say "Claude is off for the demo (add --claude to keep it on)."; fi
+  if [ "$CLAUDE" = off ]; then WENV="$WENV CLAUDE_ENABLED=false"; say "Claude is off (--no-claude)."; fi
   : > "$LOGS/worker.log"
   # shellcheck disable=SC2086
   launch worker "$ROOT/worker" bash -c 'set -a; . ./.env; set +a; exec "$@"' _ env $WENV .venv/bin/python -m nestwatch_worker.main
