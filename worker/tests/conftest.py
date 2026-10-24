@@ -15,7 +15,7 @@ def unopt(v):
 
 class FakeSpacetime:
     def __init__(self):
-        self.t = {k: [] for k in ("alert", "call_job", "incident_event", "zone", "named_area", "worker_contacts", "report", "room", "caregiver")}
+        self.t = {k: [] for k in ("alert", "call_job", "incident_event", "zone", "named_area", "worker_contacts", "report", "room", "caregiver", "track_position")}
         self.roles: dict[str, dict] = {}            # token -> my_role row
         self.calls: list[tuple[str, list]] = []
         self.token = "worker-token"
@@ -134,6 +134,8 @@ def settings():
     s = Settings()
     s.poll_s, s.call_retry_delays_s, s.keyframe_wait_s, s.closing_time = 0.01, (0.0,), 8.0, "18:00"
     s.calls_enabled, s.public_base_url, s.claude_enabled = False, "https://worker.example.test", False
+    import tempfile
+    s.watch_keys_file = tempfile.mktemp(prefix="watch-keys-", suffix=".json")           # never the real file
     return s
 
 

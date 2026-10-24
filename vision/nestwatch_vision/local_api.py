@@ -138,7 +138,7 @@ def _pairs(v, name: str) -> np.ndarray:
 
 
 def create_app(ctx: VisionContext) -> FastAPI:
-    app = FastAPI(title="NestWatch vision service", docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(title="ollo vision service", docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(CORSMiddleware, allow_origin_regex=LOCAL_ORIGIN, allow_methods=["GET", "POST"], allow_headers=["content-type"])
 
     def check_camera(camera_id: str):

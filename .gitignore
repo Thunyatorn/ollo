@@ -39,3 +39,6 @@ worker/.venv/
 worker/.flows-*
 vision/certs/
 .run/
+worker/.watch-keys.json*
+garmin/bin/
+garmin/developer_key.*

@@ -2,7 +2,7 @@
 /* The look of the team's reference build (commit 17cca7a, src/styles.css), copied as is. */
 @import "./reference.css";
 
-/* ---- NestWatch Spacetime edition: our own pieces, drawn in the reference build's palette ---- */
+/* ---- ollo Spacetime edition: our own pieces, drawn in the reference build's palette ---- */
 :root {
   --bg: #101113; --panel: #15181b; --panel2: #17191c; --line: #30353a; --line2: #27292d;
   --ink: #d1d5db; --bright: #edf0f2; --mute: #7c858e; --soft: #9aa3ad;

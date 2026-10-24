@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start, stop and check the NestWatch Spacetime edition on this computer.
+# Start, stop and check the ollo Spacetime edition on this computer.
 #
 #   scripts/nestwatch.sh start [--source demo|webcam|phone|FILE|URL] [--calls simulated|real] [--loud-alarm] [--demo-map]
 #   scripts/nestwatch.sh status
@@ -13,6 +13,8 @@
 # --calls    simulated  no real phone call is ever made                                                          [default]
 #            real       the worker places REAL calls (needs CALLS_ENABLED values in worker/.env); asks you to type yes
 # --loud-alarm  let the local alarm really sound (default: it is only logged, so testing does not blast the speaker)
+# --no-claude   turn Claude off (the looping demo raises an alert every few seconds and each closed one gets a
+#               Claude-written report, about $0.01 each, billed to the API key in worker/.env)
 # --demo-map    stretch the picture over the room instead of using a calibration (positions are then not real)
 #
 # Needs the Spacetime server to be running already (`spacetime start`) and the module published to it.
@@ -52,18 +54,19 @@ cmd_status() {
   if up "http://127.0.0.1:$VISION_PORT/health"; then
     say "Vision service:        running  ($(curl -s -m 2 "http://127.0.0.1:$VISION_PORT/health" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("camera", "online" if d["camera_online"] else "OFFLINE", "|", d["fps"], "fps |", "calibrated" if d["calibrated"] else "not calibrated")'))"
   else say "Vision service:        not running"; fi
-  if curl -s -m 2 "http://127.0.0.1:$WEB_PORT/" | grep -q "NestWatch"; then say "Website:               running  -> http://127.0.0.1:$WEB_PORT"
+  if curl -s -m 2 "http://127.0.0.1:$WEB_PORT/" | grep -q "ollo"; then say "Website:               running  -> http://127.0.0.1:$WEB_PORT"
   else say "Website:               not running"; fi
 }
 
 cmd_start() {
-  local SOURCE=demo CALLS=simulated LOUD=0 DEMOMAP=0
+  local SOURCE=demo CALLS=simulated LOUD=0 DEMOMAP=0 CLAUDE=auto
   while [ $# -gt 0 ]; do
     case "$1" in
       --source) SOURCE="${2:-}"; shift 2;;
       --calls) CALLS="${2:-}"; shift 2;;
       --loud-alarm) LOUD=1; shift;;
       --demo-map) DEMOMAP=1; shift;;
+      --no-claude) CLAUDE=off; shift;;
       *) say "Unknown option: $1"; exit 2;;
     esac
   done
@@ -82,12 +85,13 @@ cmd_start() {
   # worker (its settings come from worker/.env; for simulated calls the real-call switch is forced off)
   local WENV=""
   [ "$CALLS" = simulated ] && WENV="CALLS_ENABLED=false SIM_CALL_OUTCOME=${SIM_CALL_OUTCOME:-press1} SIM_RING_S=${SIM_RING_S:-4}"
+  if [ "$CLAUDE" = off ]; then WENV="$WENV CLAUDE_ENABLED=false"; say "Claude is off (--no-claude)."; fi
   : > "$LOGS/worker.log"
   # shellcheck disable=SC2086
   launch worker "$ROOT/worker" bash -c 'set -a; . ./.env; set +a; exec "$@"' _ env $WENV .venv/bin/python -m nestwatch_worker.main
 
   # website (only if it is not already up)
-  if ! curl -s -m 2 "http://127.0.0.1:$WEB_PORT/" | grep -q "NestWatch"; then
+  if ! curl -s -m 2 "http://127.0.0.1:$WEB_PORT/" | grep -q "ollo"; then
     : > "$LOGS/web.log"
     launch web "$ROOT/web" node_modules/.bin/vite --host --port "$WEB_PORT"
   fi

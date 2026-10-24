@@ -71,7 +71,7 @@ class PhoneFeed:
 
 
 def create_phone_app(feed: PhoneFeed, code: str) -> FastAPI:
-    app = FastAPI(title="NestWatch phone camera", docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(title="ollo phone camera", docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.get("/phone-cam")
     def page():
@@ -135,7 +135,7 @@ def ensure_cert(directory: str, ips: list[str]) -> tuple[str, str]:
         except Exception:
             pass                                                               # unreadable: make a new one
     key = ec.generate_private_key(ec.SECP256R1())
-    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "NestWatch phone camera")])
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "ollo phone camera")])
     now = datetime.now(timezone.utc)
     cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
             .serial_number(x509.random_serial_number()).not_valid_before(now - timedelta(days=1)).not_valid_after(now + timedelta(days=365))

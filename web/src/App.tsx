@@ -9,6 +9,7 @@ import Rules from './pages/Rules';
 import Reports from './pages/Reports';
 import Caregivers from './pages/Caregivers';
 import Settings from './pages/Settings';
+import WatchPairing from './pages/WatchPairing';
 import PhoneLayout from './pages/PhoneLayout';
 import PhoneAlert from './pages/PhoneAlert';
 import PhoneRule from './pages/PhoneRule';
@@ -22,7 +23,7 @@ export default function App() {
     return (
       <div className="phone" style={{ paddingTop: '18vh' }}>
         <div className="card">
-          <h2>{conn.connectionError ? 'Cannot reach NestWatch' : 'Connecting…'}</h2>
+          <h2>{conn.connectionError ? 'Cannot reach ollo' : 'Connecting…'}</h2>
           <p className="muted">
             {conn.connectionError
               ? 'Check that the Spacetime server is running and this device is on the same network.'
@@ -42,6 +43,7 @@ export default function App() {
         <Route path="settings" element={<Settings />}>
           <Route index element={<Setup />} />
           <Route path="caregivers" element={<Caregivers />} />
+          <Route path="watch" element={<WatchPairing />} />
         </Route>
         <Route path="setup" element={<Navigate to="/settings" replace />} />
         <Route path="rules" element={<Rules />} />

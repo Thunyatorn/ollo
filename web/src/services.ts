@@ -3,7 +3,7 @@ import { VISION_URL, WORKER_URL } from './config';
 
 export interface VisionHealth { camera_online?: boolean; fps?: number; calibrated?: boolean; spacetime_online?: boolean | null;
   buzzers?: Record<string, unknown>; alarm?: { active: boolean; reasons: string[] }; detector?: string }
-export interface WorkerHealth { claude?: string; calls?: string; claude_cost_usd?: number; claude_calls?: number }
+export interface WorkerHealth { claude?: string; calls?: string; claude_cost_usd?: number; claude_calls?: number; public_url?: string | null }
 /** undefined: not checked yet; null: not reachable */
 export interface Services { vision: VisionHealth | null | undefined; worker: WorkerHealth | null | undefined }
 

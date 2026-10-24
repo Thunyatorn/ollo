@@ -1,0 +1,6 @@
+<!-- Empty in git. A store or beta install sets them in Garmin Connect (settings.xml); for a sideloaded build,
+     garmin/build.sh fills them into a private copy so the code never lands in the repository. -->
+<properties>
+    <property id="ServerUrl" type="string"></property>
+    <property id="PairingCode" type="string"></property>
+</properties>

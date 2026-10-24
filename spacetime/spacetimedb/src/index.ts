@@ -659,13 +659,13 @@ export const acknowledgeAlert = spacetimedb.reducer(
   { alertId: t.string(), caregiverId: t.string(), via: t.string() },
   (ctx, { alertId, caregiverId, via }) => {
     const who = requireRole(ctx, 'vision', 'worker', 'caregiver');
-    if (!['buzzer', 'dashboard', 'phone_app', 'phone_call', 'voice'].includes(via)) {
+    if (!['buzzer', 'dashboard', 'phone_app', 'phone_call', 'voice', 'watch'].includes(via)) {
       throw new SenderError('bad via');
     }
     // Each caller may only claim the channels it really owns.
     if (who.role === 'vision' && via !== 'buzzer') throw new SenderError('vision can only ack via buzzer');
-    if (who.role === 'worker' && via !== 'phone_call' && via !== 'voice') {
-      throw new SenderError('worker can only ack via phone_call or voice');
+    if (who.role === 'worker' && via !== 'phone_call' && via !== 'voice' && via !== 'watch') {
+      throw new SenderError('worker can only ack via phone_call, voice or watch');
     }
     if (who.role === 'caregiver') {
       if (via !== 'dashboard' && via !== 'phone_app') throw new SenderError('caregivers ack via dashboard or phone_app');
@@ -700,9 +700,9 @@ export const declineAlert = spacetimedb.reducer(
   { alertId: t.string(), caregiverId: t.string(), via: t.string() },
   (ctx, { alertId, caregiverId, via }) => {
     const who = requireRole(ctx, 'worker', 'caregiver');
-    if (!['dashboard', 'phone_app', 'phone_call', 'voice'].includes(via)) throw new SenderError('bad via');
-    if (who.role === 'worker' && via !== 'phone_call' && via !== 'voice') {
-      throw new SenderError('worker can only decline via phone_call or voice');
+    if (!['dashboard', 'phone_app', 'phone_call', 'voice', 'watch'].includes(via)) throw new SenderError('bad via');
+    if (who.role === 'worker' && via !== 'phone_call' && via !== 'voice' && via !== 'watch') {
+      throw new SenderError('worker can only decline via phone_call, voice or watch');
     }
     if (who.role === 'caregiver') {
       if (via !== 'dashboard' && via !== 'phone_app') throw new SenderError('caregivers decline via dashboard or phone_app');

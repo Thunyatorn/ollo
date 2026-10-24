@@ -30,6 +30,7 @@ class Settings:
     port: int = field(default_factory=lambda: int(_env("WORKER_PORT", "8787")))
     app_origins: str = field(default_factory=lambda: _env("APP_ORIGINS"))   # extra allowed browser origins, comma-separated
     poll_s: float = 0.5
+    watch_keys_file: str = field(default_factory=lambda: _env("WATCH_KEYS_FILE", str(HERE / ".watch-keys.json")))
 
     # Claude. A fast model where speed matters (second opinion), a stronger one for rules and reports (CLUADE.md).
     claude_enabled: bool = field(default_factory=lambda: _flag("CLAUDE_ENABLED", bool(_env("ANTHROPIC_API_KEY") or _env("ANTHROPIC_AUTH_TOKEN"))))

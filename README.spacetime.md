@@ -1,4 +1,4 @@
-# NestWatch (local development)
+# ollo (local development)
 
 Spec: `CLUADE.md`. Build plan: see the plan file in `~/.claude/plans/`.
 
