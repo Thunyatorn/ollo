@@ -22,7 +22,7 @@ class AlertCoordinator:
         ack(alert_id, caregiver_id) records the acknowledgement in Spacetime (via buzzer)."""
         self.hub, self.alarm, self._ack = hub, alarm, ack
         self.caregivers: list[dict] = []
-        self.buzzed: dict[str, set] = {}          # alert id -> buzzer ids already sent a buzz
+        self.buzzed: dict[str, set] = {}          # alert id -> (buzzer id, connection number) already sent a buzz
         self.stopped: set = set()                 # alert ids already told to stop
         self.owner_names: dict[str, str] = {}
 
@@ -36,10 +36,12 @@ class AlertCoordinator:
             live.add(aid)
             if status in OPEN and not owner:
                 if a["severity"] in ("high", "medium"):                      # low is app-only
+                    gen = getattr(self.hub, "generation", lambda b: 0)
                     for buzzer in self._targets(status):
-                        if buzzer not in self.buzzed.setdefault(aid, set()):
+                        key = (buzzer, gen(buzzer))               # a buzzer that reconnected is a new connection: tell it again
+                        if key not in self.buzzed.setdefault(aid, set()):
                             if self.hub.send(buzzer, {"type": "buzz", "alert_id": aid, "severity": a["severity"]}):
-                                self.buzzed[aid].add(buzzer)
+                                self.buzzed[aid].add(key)
                 if status == "unanswered":
                     self.alarm.start(f"unanswered:{aid}")
                 else:

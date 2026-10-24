@@ -7,6 +7,7 @@
   GET  /keyframes/{event_id}/{n} blurred key frame n of an event
   GET  /health                   cameras, frame rate, model, Spacetime connection, buzzers, alarm
   WS   /buzzer                   wrist buzzers
+  GET  /buzzer-sim               a stand-in wrist buzzer in the browser
 
 Requests from outside the private network are refused (a router port-forward must not expose this), and browsers may
 only call it from pages served on the local network.
@@ -25,7 +26,7 @@ import cv2
 import numpy as np
 from fastapi import Body, FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 from .calibration import CalibrationError, calibrate
 from .evidence import SAFE_REF
@@ -212,6 +213,11 @@ def create_app(ctx: VisionContext) -> FastAPI:
         if not 1 <= n <= 9:
             raise HTTPException(404, "no such key frame")
         return FileResponse(evidence_file(event_id, f"_{n}.jpg"), media_type="image/jpeg")
+
+    @app.get("/buzzer-sim")
+    def buzzer_sim():
+        """A stand-in wrist buzzer in the browser (Phase 4). Open it on a phone on the daycare Wi-Fi: /buzzer-sim?id=buzzer-maria"""
+        return HTMLResponse(open(os.path.join(os.path.dirname(__file__), "static", "buzzer.html"), encoding="utf-8").read())
 
     @app.websocket("/buzzer")
     async def buzzer(ws: WebSocket):

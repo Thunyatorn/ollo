@@ -9,7 +9,10 @@ CG = [{"id": "c_maria", "name": "Maria", "role": "primary", "buzzer_id": "buzzer
 
 class FakeHub:
     def __init__(self, connected=("buzzer-maria", "buzzer-bob", "buzzer-sam", "buzzer-off")):
-        self.sent, self.connected = [], set(connected)
+        self.sent, self.connected, self.gen = [], set(connected), {}
+
+    def generation(self, b):
+        return self.gen.get(b, 0)
 
     def send(self, b, m):
         if b not in self.connected:
@@ -132,3 +135,14 @@ def test_an_alert_taken_and_closed_between_two_polls_still_stops_the_buzzers():
     hub.sent.clear()
     c.tick([], CG)                                                     # next poll: it is already closed, so not in the live set
     assert [m["type"] for _, m in hub.sent] and all(m["type"] == "stop" and m["alert_id"] == "a_1" for _, m in hub.sent)
+
+
+def test_a_buzzer_that_reconnects_is_told_again_about_alerts_still_open():
+    c, hub, _, _ = make()
+    c.tick([alert("notified", aid="a_1"), alert("notified", aid="a_2")], CG)
+    assert sum(1 for b, m in hub.sent if b == "buzzer-maria" and m["type"] == "buzz") == 2
+    c.tick([alert("notified", aid="a_1"), alert("notified", aid="a_2")], CG)
+    assert sum(1 for b, m in hub.sent if b == "buzzer-maria" and m["type"] == "buzz") == 2       # same connection: not again
+    hub.gen["buzzer-maria"] = 2                                                                   # battery swap, Wi-Fi blip, reload
+    c.tick([alert("notified", aid="a_1"), alert("notified", aid="a_2")], CG)
+    assert sum(1 for b, m in hub.sent if b == "buzzer-maria" and m["type"] == "buzz") == 4       # both re-sent to the new connection

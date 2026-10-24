@@ -20,6 +20,7 @@ class BuzzerHub:
         self.on_ack = on_ack
         self._sockets: dict[str, WebSocket] = {}
         self.info: dict[str, dict] = {}                     # buzzer_id -> {"battery": float, "last_seen": monotonic}
+        self._generation: dict[str, int] = {}               # buzzer_id -> connection number; a reconnect must be re-told open alerts
         self._loop: asyncio.AbstractEventLoop | None = None
 
     # ---- called from the web server's event loop --------------------------------------------------------
@@ -36,6 +37,7 @@ class BuzzerHub:
             buzzer_id = str(hello["buzzer_id"])[:64]
             old = self._sockets.get(buzzer_id)
             self._sockets[buzzer_id] = ws
+            self._generation[buzzer_id] = self._generation.get(buzzer_id, 0) + 1
             self.info[buzzer_id] = {"battery": hello.get("battery"), "last_seen": time.monotonic()}
             log.info("buzzer %s connected (battery %s)", buzzer_id, hello.get("battery"))
             if old is not None:                            # a reconnect replaces the stale connection
@@ -72,6 +74,9 @@ class BuzzerHub:
             await ws.send_json({"type": "ping"})
 
     # ---- called from any thread -----------------------------------------------------------------------
+    def generation(self, buzzer_id: str) -> int:
+        return self._generation.get(buzzer_id, 0)
+
     def connected(self) -> list[str]:
         return sorted(self._sockets)
 

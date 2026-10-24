@@ -20,3 +20,4 @@ tools/.vision-token
 spacetime/spacetime.local.json
 .DS_Store
 test-results/
+firmware/**/config.h

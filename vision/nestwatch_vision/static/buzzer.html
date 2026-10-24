@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NestWatch buzzer</title>
+<style>
+  :root { color-scheme: light; --ink: #000; --paper: #fff; --red: #b00000; --orange: #c46a00; --green: #006400; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 17px/1.4 "Times New Roman", Times, serif; }
+  main { max-width: 420px; margin: 0 auto; padding: 16px; text-align: center; }
+  h1 { font-size: 1.6rem; margin: .3rem 0 0; }
+  .sub { margin: 0 0 1rem; color: #4d4d4d; }
+  .row { display: flex; gap: .5rem; justify-content: center; align-items: center; flex-wrap: wrap; margin: .4rem 0; }
+  input, select { font: inherit; border: 2px inset #9a9a9a; padding: .3rem .4rem; min-height: 40px; }
+  .led { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #000; display: inline-block; vertical-align: middle; }
+  .watch { border: 1px solid #000; padding: 1rem; margin: 1rem 0; }
+  .state { font-size: 1.5rem; font-weight: 700; margin: .5rem 0; min-height: 2.2em; }
+  #tap { width: 100%; min-height: 120px; font: 700 1.6rem "Times New Roman", serif; background: #e4e4e4; border: 3px outset #c4c4c4; cursor: pointer; }
+  #tap:active { border-style: inset; }
+  .buzzing { animation: shake .12s linear infinite; }
+  @keyframes shake { 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
+  @media (prefers-reduced-motion: reduce) { .buzzing { animation: none; outline: 4px solid var(--red); } }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; margin-top: 1rem; text-align: left; }
+  td, th { border: 1px solid #000; padding: .25rem .4rem; vertical-align: top; }
+  #log { font: .8rem "Courier New", monospace; text-align: left; max-height: 9rem; overflow: auto; border: 1px solid #d0d0d0; padding: .3rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>NestWatch buzzer</h1>
+  <p class="sub">A stand-in for the wrist buzzer. It speaks the same protocol; on Android it also vibrates the phone.</p>
+  <div class="row">
+    <label>Buzzer <input id="bid" size="14" aria-label="Buzzer id"></label>
+    <label>Battery <select id="bat" aria-label="Battery"><option value="0.9">90%</option><option value="0.4">40%</option><option value="0.1">10%</option></select></label>
+  </div>
+  <div class="watch" id="watch">
+    <span class="led" id="led" aria-hidden="true"></span>
+    <div class="state" id="state" role="status" aria-live="assertive">Connecting…</div>
+    <button id="tap" type="button">Tap</button>
+    <p class="sub" id="hint">Tap acknowledges an alert ("I'm on it").</p>
+  </div>
+  <div id="log" aria-label="Messages"></div>
+  <table aria-label="What the states mean">
+    <tr><th>State</th><th>Vibration</th><th>Light</th></tr>
+    <tr><td>Idle</td><td>Off</td><td>Slow green blink</td></tr>
+    <tr><td>High alert</td><td>Long pulses</td><td>Fast orange</td></tr>
+    <tr><td>Medium alert</td><td>Short pulses</td><td>Slow orange</td></tr>
+    <tr><td>Someone else took it</td><td>Stops</td><td>Green</td></tr>
+    <tr><td>Disconnected</td><td>One long buzz</td><td>Red</td></tr>
+  </table>
+</main>
+<script>
+(() => {
+  const q = new URLSearchParams(location.search);
+  const $ = id => document.getElementById(id);
+  $("bid").value = q.get("id") || "buzzer-maria";
+  let ws = null, pending = [], timer = null, blink = null, retry = 1000, wasConnected = false;   // pending: alerts not yet taken, most urgent first
+
+  const log = s => { const d = document.createElement("div"); d.textContent = new Date().toLocaleTimeString() + "  " + s; $("log").prepend(d); };
+  const vibrate = p => { try { navigator.vibrate && navigator.vibrate(p); } catch (e) {} };
+
+  function led(color, period) {                       // period in ms; 0 = steady
+    clearInterval(blink); let on = true; $("led").style.background = color;
+    if (period) blink = setInterval(() => { on = !on; $("led").style.background = on ? color : "#fff"; }, period / 2);
+  }
+  function pulses(sev) {                               // repeat the pattern until stopped
+    clearInterval(timer);
+    const p = sev === "high" ? [700, 300] : [200, 400];
+    vibrate(p); timer = setInterval(() => vibrate(p), p[0] + p[1]);
+    $("watch").classList.add("buzzing");
+  }
+  function quiet() { clearInterval(timer); vibrate(0); $("watch").classList.remove("buzzing"); }
+
+  function show(state, text) {
+    $("state").textContent = text;
+    if (state === "idle") { quiet(); led("#2a9d2a", 2000); }
+    if (state === "high") { pulses("high"); led("#e07a00", 300); }
+    if (state === "medium") { pulses("medium"); led("#e07a00", 1200); }
+    if (state === "taken") { quiet(); led("#2a9d2a", 0); }
+    if (state === "down") { quiet(); vibrate(1200); led("#b00000", 0); }
+  }
+
+  function showPending() {
+    const a = pending[0];
+    show(a.severity === "high" ? "high" : "medium", (a.severity === "high" ? "HIGH alert " : "Alert ") + a.id + (pending.length > 1 ? "  (+" + (pending.length - 1) + " more)" : ""));
+  }
+
+  function connect() {
+    const url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/buzzer";
+    ws = new WebSocket(url);
+    ws.onopen = () => {
+      retry = 1000; wasConnected = true; pending = [];
+      ws.send(JSON.stringify({ type: "hello", buzzer_id: $("bid").value, battery: +$("bat").value }));
+      log("connected as " + $("bid").value); show("idle", "Idle");
+    };
+    ws.onmessage = ev => {
+      const m = JSON.parse(ev.data);
+      if (m.type === "ping") return;
+      log("received " + ev.data);
+      if (m.type === "buzz" && !pending.some(a => a.id === m.alert_id)) {
+        pending.push({ id: m.alert_id, severity: m.severity });
+        pending.sort((a, b) => (a.severity === "high" ? 0 : 1) - (b.severity === "high" ? 0 : 1));   // high first, then oldest
+        showPending();
+      }
+      if (m.type === "stop") {
+        const was = pending.length;
+        pending = pending.filter(a => a.id !== m.alert_id);
+        if (was && !pending.length) { show("taken", m.owner + " is handling it"); setTimeout(() => !pending.length && show("idle", "Idle"), 4000); }
+        else if (pending.length) showPending();
+      }
+    };
+    ws.onclose = () => {
+      if (wasConnected) { show("down", "Disconnected: retrying"); log("disconnected"); wasConnected = false; }
+      else $("state").textContent = "Cannot reach the camera computer: retrying";
+      setTimeout(connect, retry); retry = Math.min(retry * 2, 15000);
+    };
+  }
+
+  $("tap").onclick = () => {                           // one button: acknowledges the alert shown, then the next one comes up
+    if (pending.length && ws && ws.readyState === 1) {
+      const a = pending.shift();
+      ws.send(JSON.stringify({ type: "ack", buzzer_id: $("bid").value, alert_id: a.id }));
+      log("tapped: acknowledge " + a.id);
+      if (pending.length) showPending(); else { quiet(); $("state").textContent = "Sent: I'm on it"; }
+    } else if (!ws || ws.readyState !== 1) { retry = 500; }
+  };
+  $("bid").onchange = $("bat").onchange = () => ws && ws.close();
+  connect();
+})();
+</script>
+</body>
+</html>

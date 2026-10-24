@@ -74,3 +74,4 @@ def test_a_reconnect_replaces_the_old_connection():
             assert wait(lambda: hub.info["b1"]["battery"] == 0.9)
             assert hub.send("b1", {"type": "buzz", "alert_id": "x", "severity": "high"})
             assert b.receive_json()["type"] == "buzz"                  # the new connection gets it
+            assert hub.generation("b1") == 2                           # and it is counted as a new connection
