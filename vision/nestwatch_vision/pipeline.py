@@ -11,6 +11,7 @@ from .calibration import jacobian, to_floor
 from .config import PipelineConfig, TrackerConfig
 from .cusum import CusumBank
 from .detectors.fall import FallConfig, FallDetector
+from .detectors.not_visible import NotVisibleDetector
 from .detectors.unsupervised import UnsupervisedConfig, evidence as supervision_evidence
 from .pose import Person, foot_point
 from .prediction import zone_evidence
@@ -21,7 +22,7 @@ from .zones import ZoneCache
 @dataclass
 class Event:
     track_id: str
-    event_type: str                 # zone_entry_predicted | zone_entry | fall | unsupervised
+    event_type: str                 # zone_entry_predicted | zone_entry | fall | unsupervised | child_not_visible
     zone_id: str
     severity: str
     predicted_entry_s: float | None
@@ -51,6 +52,8 @@ class Pipeline:
         self.fall = FallDetector(FallConfig())
         self.sup_cfg = UnsupervisedConfig()
         self.sup_bank = CusumBank(self.sup_cfg.k, self.sup_cfg.h, self.sup_cfg.cooldown_s)
+        self.not_visible = NotVisibleDetector()
+        self._first_seen: dict[int, float] = {}
         self.adult_tagged = False               # the unsupervised check stays off until someone has been tagged as an adult
 
     def set_homography(self, H: np.ndarray | None) -> None:
@@ -88,6 +91,8 @@ class Pipeline:
 
         tracks = self.tracker.step(dets, t)
         res.tracks = tracks
+        for tr in tracks:
+            self._first_seen.setdefault(tr.id, t)
         for lost in self.tracker.newly_lost:
             self.bank.forget_track(lost.id)
             self.sup_bank.forget_track(lost.id)
@@ -117,6 +122,14 @@ class Pipeline:
                     e = supervision_evidence(tr.pos, adults, self.sup_cfg)
                     if self.sup_bank.update((tr.id, "unsupervised"), e, t):
                         res.events.append(Event(f"t{tr.id}", "unsupervised", "", "medium", None, f"evt_{int(t * 1000)}_t{tr.id}", t))
+
+        # a child the camera lost (CLUADE.md failure table): a low alert, after the checks in detectors/not_visible.py
+        ages = {tid: t - t0 for tid, t0 in self._first_seen.items()}
+        children = [tr.pos for tr in tracks if tr.tag is None and tr.visible]
+        for lost in self.not_visible.update(self.tracker.newly_lost, self.tracker.lost, children, ages, t):
+            res.events.append(Event(f"t{lost.id}", "child_not_visible", "", "low", None, f"evt_{int(t * 1000)}_t{lost.id}", t))
+        live = {tr.id for tr in self.tracker.tracks} | {l.id for l in self.tracker.lost}
+        self._first_seen = {k: v for k, v in self._first_seen.items() if k in live}
 
         # falls (MATH 8.1): detected in the picture, attached to the nearest tracked person on the floor
         for f in self.fall.update(everyone if everyone is not None else people, t):

@@ -1016,3 +1016,19 @@ False alarms fall about as fast as catches do, so F1 never improves. Conclusion:
 fewer false alarms costs real falls; the choice is an operating point, not a fix. A real improvement needs something new
 (for example a classifier trained on pose sequences from far more labelled falls, or a second look from Claude).
 Tools: `scripts/analyze_falls.py` (measurements per alert), `scripts/tune_falls.py` (the search with held-out people).
+
+### 8.5 A child the camera lost (`child_not_visible`, 2026-10-24)
+
+Spec: "a child's track is lost: last position kept for about 2 s, then a `child_not_visible` event; low alert."
+The tracker already marks a confirmed track lost after `lost_timeout` = 2 s. Reporting then would fire on tracking
+glitches, so `detectors/not_visible.py` applies three more checks before the low alert:
+
+1. the child stays lost for `grace_s` = 1 s, and a new track that takes the old identity (MATH 4.5) cancels it;
+2. the child was tracked for at least `min_age_s` = 3 s, so a flicker is not a missing child;
+3. no other untagged child is within `near_m` = 1 m of where it was last seen (a duplicate track dying while the same
+   child is still visible is not a missing child).
+
+Adult-tagged tracks are never reported. Total delay from the last sighting: about 3 s. Severity low, so it is shown in
+the apps and never buzzes or escalates. Tests: a child who vanishes for good raises one alert 8.5 to 9.5 s into a run
+where they disappear at 6 s; hidden 2.2 s raises none; one second of detections raises none. Not yet measured on footage
+of a real room: the alerts per hour will depend on blind spots and doorways, so tune `near_m` and `grace_s` there.
