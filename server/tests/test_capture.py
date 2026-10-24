@@ -218,7 +218,8 @@ def test_server_camera_runs_analysis_without_a_browser(monkeypatch):
             assert took is not None and took < 3, took
             assert client.get('/api/state').json()['camera']['capture']['status'] == 'offline'
             # Logged on the capture's next tick (1/12 s), once.
-            offline_events = lambda: [e['type'] for e in client.get('/api/state').json()['events']].count('camera_offline')
+            # Counted for this camera only: with SRC-5, other cameras log their own events.
+            offline_events = lambda: sum(1 for e in client.get('/api/state').json()['events'] if e['type'] == 'camera_offline' and '10.0.0.5' in e['message'])
             assert wait_until(lambda: offline_events() == 1, 0.5) is not None
             time.sleep(0.3)
             assert offline_events() == 1
