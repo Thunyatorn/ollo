@@ -15,7 +15,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 from .store import KINDS, Store, uid
-from .providers import Calls, ready, allowed_numbers, token_hash, twilio_ready
+from .providers import Calls, ready, allowed_numbers, token_hash, twilio_ready, telegram_send, telegram_text
 from .playback import RecordedAnalyzer
 from .rules import DEFAULT_MODEL, draft_rule, validate_landmark
 from .clips import ClipRecorder, blur_jpeg, prune, write_clip
@@ -50,6 +50,15 @@ def track(coro):
     task=asyncio.create_task(guarded());call_watchers.add(task);task.add_done_callback(call_watchers.discard)
 
 
+async def notify_telegram(incident,step,simulated):
+    image=None
+    if incident.get('evidence_url'):   # the head-blurred key frame; fixtures have none, so they send text only
+        with contextlib.suppress(OSError):image=await asyncio.to_thread((DATA_DIR/Path(incident['evidence_url']).name).read_bytes)
+    result=await telegram_send(telegram_text(incident,step,simulated),image)
+    if result:
+        with store.db:store.event('telegram_sent' if result['sent'] else 'telegram_failed',f"Telegram alert · {result['sent']} sent, {result['failed']} failed",incident['id'])
+
+
 async def coordinator():
     while True:
         job=store.claim_due()
@@ -60,6 +69,7 @@ async def coordinator():
                 armed=session['calls_armed'] and count<6 and incident['status']=='open'
                 if job['step']==1:
                     await cancel_calls(incident['id'])
+                if incident['status']=='open':track(notify_telegram(incident,job['step'],not session['calls_armed']))   # beside the call, never delaying it
                 def still_authorized():
                     latest=store.get('session'); current=store.incident(incident['id'])
                     return latest['id']==session['id'] and latest['epoch']==incident['epoch'] and latest['calls_armed'] and current['status']=='open' and not (job['step']==0 and current.get('declined_at'))

@@ -1342,34 +1342,6 @@ export default function App() {
                                   {i + 1}
                                 </span>
                               ))}
-                            {zones && (state.settings.zone as { enabled?: boolean } | undefined)?.enabled !== false && (
-                              <svg
-                                viewBox="0 0 1000 1000"
-                                preserveAspectRatio="none"
-                              >
-                                <polygon
-                                  points={(
-                                    (
-                                      state.settings.zone as {
-                                        vertices?: number[][];
-                                      }
-                                    )?.vertices || [
-                                      [0.72, 0.15],
-                                      [0.94, 0.15],
-                                      [0.94, 0.88],
-                                      [0.72, 0.88],
-                                    ]
-                                  )
-                                    .map((v) => `${v[0] * 1000},${v[1] * 1000}`)
-                                    .join(" ")}
-                                  fill="var(--primary-soft)"
-                                  stroke="var(--status-resolved)"
-                                  strokeWidth="2"
-                                  strokeDasharray="7 5"
-                                  vectorEffect="non-scaling-stroke"
-                                />
-                              </svg>
-                            )}
                             {visibleOverlays.map((o, i) => (
                               <div
                                 key={o.id || i}

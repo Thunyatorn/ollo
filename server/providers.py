@@ -25,6 +25,32 @@ def provider():
     return os.getenv('CALL_PROVIDER','twilio')
 
 
+def telegram_text(incident,step,simulated=False):
+    return 'ollo alert'+(' (simulation, no call placed)' if simulated else '')+' · '+incident['room']+'\n'+KINDS.get(incident['kind'],KINDS['boundary'])[1]+'\n'+('Backup' if step else 'Primary')+' caregiver escalation.'
+
+
+async def telegram_send(text,image=None):
+    """Alert text, with the head-blurred key frame as a photo when given, to each TELEGRAM_CHAT_ID chat.
+    None when not configured, else {'sent','failed'}; never raises. A photo Telegram refuses falls back to text only.
+    shortcut: explicit chat ids only (no getUpdates, which would fight another consumer of the same bot), one audience for
+    all alerts; upgrade when each caregiver needs their own chat."""
+    token=os.getenv('TELEGRAM_BOT_TOKEN','');chats=[x.strip() for x in os.getenv('TELEGRAM_CHAT_ID','').split(',') if x.strip()]
+    if not token or not chats:return None
+    url='https://api.telegram.org/bot'+token+'/'
+    sent=0
+    async with httpx.AsyncClient(timeout=15) as client:
+        for chat in chats:
+            ok=False
+            if image:
+                try:ok=(await client.post(url+'sendPhoto',data={'chat_id':chat,'caption':text[:1000]},files={'photo':('frame.jpg',image,'image/jpeg')})).status_code==200
+                except Exception:pass   # the exception text can carry the bot token in its URL
+            if not ok:
+                try:ok=(await client.post(url+'sendMessage',json={'chat_id':chat,'text':text})).status_code==200
+                except Exception:pass
+            sent+=ok
+    return {'sent':sent,'failed':len(chats)-sent}
+
+
 def _base_ready():
     return os.getenv('CALLS_ENABLED','false').lower()=='true' and bool(allowed_numbers()) and os.getenv('PUBLIC_CALLBACK_BASE_URL','').startswith('https://')
 
