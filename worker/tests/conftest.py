@@ -102,6 +102,8 @@ class FakeSpacetime:
                                    "schedule": args[2], "severity": args[3], "escalation": args[4]})
         elif reducer == "escalate_due":
             pass
+        elif reducer == "log_family_event":
+            self.log(args[0], args[1], args[2])
         else:
             raise AssertionError(f"unexpected reducer {reducer}")
 

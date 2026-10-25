@@ -8,6 +8,7 @@ from .ai import Claude
 from .app import create_app
 from .calls import AgentCalls, FallbackCalls, SimulatedCalls, SimulatedTexts, TelegramTexts, TwilioCalls, TwilioTexts
 from .config import Settings
+from .family import Family
 from .jobs import Worker
 from .spacetime import Spacetime
 from .store import KeyframeStore, TokenChecker
@@ -33,7 +34,8 @@ def build(s: Settings):
         log.warning("CALLS_ENABLED is set but Twilio/Cartesia settings are incomplete: calls stay SIMULATED")
     keyframes = KeyframeStore(s.keyframe_ttl_s)
     texts = TelegramTexts(s) if s.telegram_token else TwilioTexts(s) if s.twilio_ready() else SimulatedTexts()
-    worker = Worker(stdb, s, claude, calls, keyframes, texts=texts)
+    family = Family(s, stdb, calls, keyframes, texts=texts) if s.telegram_token else None
+    worker = Worker(stdb, s, claude, calls, keyframes, texts=texts, family=family)
     return create_app(worker, TokenChecker(stdb), keyframes, s), worker
 
 

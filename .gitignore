@@ -42,3 +42,6 @@ vision/certs/
 worker/.watch-keys.json*
 garmin/bin/
 garmin/developer_key.*
+
+# Real medical records never go in git; the made-up demo record is worker/demo/medical-record.example.json
+worker/.medical-record*
