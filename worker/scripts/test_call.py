@@ -56,7 +56,10 @@ def escalate_now(alert_id: str) -> bool:
     return r.returncode == 0
 
 
-aid, _ = flows.open_alert("t7")
+aid, clip = flows.open_alert("t7")
+frame = Path(__file__).resolve().parent / "test_frame.jpg"      # so the text message carries an image
+httpx.post(f"{WORKER}/keyframes", data={"clip_ref": clip}, files=[("frames", ("f.jpg", frame.read_bytes(), "image/jpeg"))],
+           headers={"Authorization": f"Bearer {flows.VISION}"}).raise_for_status()
 fast = "--wait-timer" not in sys.argv and escalate_now(aid)
 t0, esc_at, last, result = time.time(), None, None, "nobody pressed 1 in time"
 try:
