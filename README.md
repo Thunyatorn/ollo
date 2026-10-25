@@ -30,7 +30,7 @@ In one study of people over 90 who fell, 30% stayed on the floor for an hour or 
 
 ## Two builds in this repo
 
-| | Main app | Spacetime edition |
+| | Main app (Fallback) | Spacetime edition (Recommended) |
 |---|---|---|
 | Folders | `server/`, `src/` | `spacetime/`, `vision/`, `worker/`, `web/`, `firmware/`, `garmin/` |
 | Backend | FastAPI + SQLite | SpacetimeDB + a Python worker |
