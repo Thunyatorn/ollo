@@ -87,7 +87,7 @@ export default function EventTrace({ state, selected, userId = "Local operator",
   return <aside className={`event-trace incident-panel ${thread ? "is-thread" : "is-list"}`} ref={root} aria-label="Incidents" aria-busy={loading}>
     {loading ? <div className="thread-state" role="status">Loading incidents…</div> : error ? <div className="thread-state" role="alert">{error}</div> : !thread ? <>
       <div className="thread-filters" role="group" aria-label="Filter incidents">{(["All", "Open", "Resolved"] as const).map(value => <button key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{value}<span>{counts[value]}</span></button>)}</div>
-      <div className="incident-list" ref={list} role="list" aria-label="Incident threads">
+      <div className="incident-list" ref={list} onScroll={event => { savedScroll.current = event.currentTarget.scrollTop; }} role="list" aria-label="Incident threads">
         {!visible.length ? <div className="thread-state"><Check size={18} /><p>Nothing flagged on this day</p><span>{filter === "All" ? "Anything that needs a look will appear here." : "No incidents match this filter."}</span></div> : visible.map(item => {
           const replies = Math.max(0, item.messages.length - 1);
           const owner = item.resolution?.by || item.source.assigned_responder;

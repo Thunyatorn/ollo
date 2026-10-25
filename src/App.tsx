@@ -291,7 +291,7 @@ export default function App() {
   const active = state.incidents.find(
     (i) => i.status === "open" || i.status === "acknowledged",
   );
-  const canUseStaffUI = ["primary", "backup", "staff", "admin", "local_operator"].includes(state.caregivers[0]?.role ?? "local_operator");
+  const canUseStaffUI = ["primary", "backup", "staff", "admin", "local_operator", "primary caregiver", "backup caregiver"].includes((state.caregivers[0]?.role ?? "local_operator").toLowerCase());
   const visibleOverlays = (zones && canUseStaffUI ? state.overlays || [] : []).filter(
     (o) =>
       o.epoch === state.session.epoch &&

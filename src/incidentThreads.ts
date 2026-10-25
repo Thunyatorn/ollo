@@ -30,7 +30,7 @@ export function adaptIncidentThread(incident: Incident, context: {
   }
   if (endedAt && ["resolved", "dismissed", "closed"].includes(incident.status)) derived.push({ kind: "status", id: `${incident.id}:resolved`, at: endedAt, authorId: incident.assigned_responder || "staff", text: `${incident.assigned_responder || "A caregiver"} ${incident.status === "dismissed" ? "dismissed" : "resolved"} this`, anchorSeconds: endSeconds });
   const messages = [...(incident.messages?.length ? incident.messages : derived), ...(context.changes?.messages ?? [])].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
-  return { id: incident.id, title: displayIncidentTitle(incident.title), cameraId: context.cameraId, cameraName: context.cameraName, startedAt, endedAt: resolution?.at ?? endedAt, startSeconds, endSeconds, status, resolution, thumbnailUrl: incident.evidence_url || context.thumbnailUrl, messages, lastReadAt: context.changes?.lastReadAt ?? incident.lastReadAt, source: incident };
+  return { id: incident.id, title: displayIncidentTitle(incident.title), cameraId: context.cameraId, cameraName: context.cameraName, startedAt, endedAt: endedAt ?? resolution?.at, startSeconds, endSeconds, status, resolution, thumbnailUrl: incident.evidence_url || context.thumbnailUrl, messages, lastReadAt: context.changes?.lastReadAt ?? incident.lastReadAt, source: incident };
 }
 export function addIncidentNote(input: { incidentId: string; cameraId: string; userId: string; authorName: string; text: string; at?: string; anchorAt?: string; anchorSeconds?: number }): IncidentMessage {
   const text = input.text.trim();
