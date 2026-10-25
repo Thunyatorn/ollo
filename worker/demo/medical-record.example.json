@@ -1,0 +1,16 @@
+{
+  "note": "MADE-UP DEMO RECORD. Not a real person.",
+  "name": "Ruth Example",
+  "date_of_birth": "1942-03-14",
+  "blood_type": "A+",
+  "conditions": ["Atrial fibrillation", "Osteoporosis", "Type 2 diabetes"],
+  "medications": [
+    {"name": "Apixaban", "dose": "5 mg twice daily", "why": "blood thinner: a fall may cause internal bleeding"},
+    {"name": "Metformin", "dose": "500 mg twice daily"},
+    {"name": "Alendronate", "dose": "70 mg weekly"}
+  ],
+  "allergies": ["Penicillin"],
+  "mobility": "Walks with a cane; one fall in the last 12 months",
+  "primary_physician": "Dr. Example, Example Family Clinic",
+  "emergency_contacts": [{"relation": "grandchild", "name": "(you)", "phone": "+1 555 000 0000"}]
+}

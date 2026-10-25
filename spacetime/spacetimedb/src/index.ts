@@ -791,6 +791,17 @@ export const setUrgency = spacetimedb.reducer(
 
 // ---------- worker: calls, reports ----------
 
+// Family emergency actions (CLUADE.md): the worker records what the family did from Telegram on the alert's timeline.
+export const logFamilyEvent = spacetimedb.reducer(
+  { alertId: t.string(), kind: t.string(), text: t.string() },
+  (ctx, { alertId, kind, text }) => {
+    requireRole(ctx, 'worker');
+    if (!['report_sent', 'ambulance_called', 'family_action_failed'].includes(kind)) throw new SenderError('bad event kind');
+    if (!ctx.db.alert.id.find(alertId)) throw new SenderError('alert not found');
+    logEvent(ctx, alertId, kind, text.slice(0, 300));
+  }
+);
+
 export const updateCallJob = spacetimedb.reducer(
   { jobId: t.string(), status: t.string() },
   (ctx, { jobId, status }) => {
