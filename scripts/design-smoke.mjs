@@ -91,7 +91,7 @@ try {
     return done;
   })));
   // Inject one tracked, warned person into every frame response.
-  await page.route("**/api/frames", async (route) => {
+  await page.route(/\/api\/(frames|playhead)$/, async (route) => {   // recordings send the playhead (SRC-6)
     const body = JSON.parse(route.request().postData() || "{}");
     await route.fulfill({
       contentType: "application/json",

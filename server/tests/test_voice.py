@@ -28,7 +28,11 @@ def agent_env(monkeypatch):
 
 def mock_http(monkeypatch, handler):
     real = httpx.AsyncClient
-    monkeypatch.setattr(httpx, 'AsyncClient', lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    def with_tunnel(request):              # PUBLIC_CALLBACK_BASE_URL reaches this server (ESC-1)
+        if str(request.url).endswith('/health'):
+            return httpx.Response(200, json={'status': 'ok', 'purpose': 'process health only'})
+        return handler(request)
+    monkeypatch.setattr(httpx, 'AsyncClient', lambda **kw: real(transport=httpx.MockTransport(with_tunnel), **kw))
 
 
 def test_cartesia_agent_places_call_with_hashed_token(agent_env, monkeypatch):

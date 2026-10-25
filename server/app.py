@@ -16,6 +16,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 from .store import KINDS, Store, uid
 from .providers import Calls, ready, allowed_numbers, token_hash, twilio_ready
+from .playback import RecordedAnalyzer
 from .rules import DEFAULT_MODEL, draft_rule, validate_landmark
 from .clips import ClipRecorder, blur_jpeg, prune, write_clip
 from .report import ai_lines, build_facts, render
@@ -258,6 +259,7 @@ class Armed(BaseModel):armed:bool
 @app.post('/api/session/arm-calls')
 async def arm(body:Armed):
     if body.armed and not ready():raise HTTPException(409,'Real calling requires configured providers, HTTPS callbacks, CALLS_ENABLED=true and consenting E.164 allowlist.')
+    if body.armed and (problem:=await calls.callback_problem()):raise HTTPException(409,problem)
     session=store.get('session');session['calls_armed']=body.armed;store.put('session',session)
     if body.armed and twilio_ready():track(calls.prepare(store.get('settings')['room_label']))  # ESC-5
     with store.db:store.event('calls_armed' if body.armed else 'calls_disarmed','Real calls '+('armed by operator' if body.armed else 'disarmed'))
@@ -307,11 +309,16 @@ async def camera_frame(after:int=-1):
     return view if view else RawResponse(status_code=204)
 
 
+class SessionStart(BaseModel):
+    media_time_ms:float|None=Field(default=None,ge=0,allow_inf_nan=False)  # SRC-6: where playback (re)starts
+
+
 @app.post('/api/session/{action}')
-async def session_action(action:str):
+async def session_action(action:str,body:SessionStart|None=None):
     if action not in ('start','pause','stop'):raise HTTPException(404)
     if action!='pause':await flush_clips()
     session=store.get('session')
+    if action=='start':session['start_media_ms']=body.media_time_ms if body else None
     session['status']={'start':'active','pause':'paused','stop':'stopped'}[action]
     session['forced_offline']=False
     if action!='pause':
@@ -572,9 +579,41 @@ def submit_frame(data):
 @app.post('/api/frames')
 async def frame(body:Frame):
     if store.get('session').get('source_type')=='server_camera':raise HTTPException(409,'The server camera is the source; browser frames are not analyzed')
+    if store.get('session').get('source_type')=='recorded':raise HTTPException(409,'Recorded videos are analyzed by the server (SRC-6); send the playhead instead')
     # Each response carries the latest overlays, so boxes refresh at the frame rate rather than the 1.5 s state poll.
     if submit_frame(body.model_dump()) is None:return {'accepted':False,'reason':'busy; latest frame wins','overlays':vision_state.get('overlays',[])}
     return {'accepted':True,'overlays':vision_state.get('overlays',[])}
+
+
+async def submit_recorded(image,frame_seq,media_time_ms,epoch):
+    """SRC-6: one frame of the uploaded video, analyzed by the server. 'busy' means try the same frame again."""
+    session=store.get('session')
+    if session.get('source_type')!='recorded' or session['epoch']!=epoch:return 'stale'
+    try:task=submit_frame({'session_id':session['id'],'epoch':epoch,'frame_seq':frame_seq,'media_time_ms':media_time_ms,'image':image})
+    except HTTPException:return 'stale'  # Paused, stopped, or a newer epoch: wait for the next playhead.
+    if task is None:return 'busy'
+    await asyncio.shield(task)
+    return 'ok'
+
+
+recorded=RecordedAnalyzer(submit_recorded,fps=12.0)  # the dashboard's ANALYSIS_FPS (SRC-2) and the server camera's rate (SRC-4)
+
+
+class Playhead(BaseModel):
+    session_id:str
+    epoch:int
+    media_time_ms:float=Field(ge=0,allow_inf_nan=False)
+
+
+@app.post('/api/playhead')
+async def playhead(body:Playhead):
+    """SRC-6: the dashboard reports where playback is; the server analyzes every frame up to it."""
+    session=store.get('session')
+    if session.get('source_type')!='recorded' or not session.get('media_id'):raise HTTPException(409,'Only an uploaded video has a server-analyzed playhead')
+    if body.session_id!=session['id']:raise HTTPException(409,'Stale session')
+    start=session.get('start_media_ms') if body.epoch==session['epoch'] else None
+    recorded.playhead(DATA_DIR/session['media_id'],body.epoch,body.media_time_ms,start_ms=start)
+    return {'analyzed_to_ms':recorded.analyzed_to_ms if recorded.epoch==body.epoch else -1,'overlays':vision_state.get('overlays',[])}
 
 
 async def submit_captured(image,frame_seq,media_time_ms):

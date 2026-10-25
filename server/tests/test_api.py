@@ -82,6 +82,7 @@ def test_frame_response_carries_overlays():
     _, raw = cv2.imencode('.jpg', np.zeros((360, 640, 3), dtype=np.uint8))
     with TestClient(app) as client:
         client.get('/api/state')
+        client.post('/api/source', json={'source_type': 'webcam'})  # browser frames are the webcam path (recordings: SRC-6)
         session = client.post('/api/session/start').json()['session']
         frame = {'session_id': session['id'], 'epoch': session['epoch'], 'frame_seq': 1, 'media_time_ms': 0, 'image': base64.b64encode(raw).decode()}
         body = client.post('/api/frames', json=frame).json()

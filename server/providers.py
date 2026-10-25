@@ -70,6 +70,25 @@ class Calls:
         self.pending={}       # call token -> (expires, speech task, text): ESC-5, speech made while the phone rings
         self.speech_cache={}  # message text -> Cartesia audio, so one message never asks Cartesia twice
         self.speech_wait=10.0
+        self._callback_ok_at=0.0   # last time PUBLIC_CALLBACK_BASE_URL answered /health (ESC-1)
+
+    def forget_callback_check(self):
+        self._callback_ok_at=0.0
+
+    async def callback_problem(self):
+        """ESC-1: None when Twilio can reach this server through PUBLIC_CALLBACK_BASE_URL, else what to fix.
+        A success is trusted for 30 s; a failure is never cached, so starting the tunnel fixes it at once."""
+        if time.time()-self._callback_ok_at<30:return None
+        base=os.getenv('PUBLIC_CALLBACK_BASE_URL','').rstrip('/')
+        try:
+            async with httpx.AsyncClient(timeout=6) as client:
+                response=await client.get(base+'/health')
+            ok=response.status_code==200 and response.json().get('status')=='ok'
+        except (httpx.HTTPError,ValueError):
+            ok=False
+        if ok:
+            self._callback_ok_at=time.time();return None
+        return f'Twilio cannot reach this server at {base}: start the tunnel in a terminal (ngrok http 127.0.0.1:8000 --pooling-enabled), then try again.'
 
     def message(self, incident):
         return 'This is an ollo alert for '+incident['room']+'. '+KINDS.get(incident['kind'],KINDS['boundary'])[1]+' Please check the room immediately. Press 1 to acknowledge, or 2 if you cannot respond.'
@@ -106,6 +125,8 @@ class Calls:
         if not armed or not ready():
             return {'status':'simulated','mode':'simulation','message':'Simulated phone escalation — no real call placed.'}
         numbers=allowed_numbers(); destination=numbers[min(step,len(numbers)-1)]
+        problem=await self.callback_problem()
+        if problem:return {'status':'failed','mode':'real','message':problem}   # no phone rings into a dead tunnel
         # Phone destinations come only from server-side environment configuration.
         if not destination.startswith('+') or not destination[1:].isdigit() or not 8<=len(destination)<=16:raise ValueError('Invalid allowlisted E.164 destination')
         if provider()=='cartesia_agent' and agent_ready():

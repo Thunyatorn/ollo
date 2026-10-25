@@ -37,6 +37,8 @@ def mock(monkeypatch, speech):
             response = await speech(request)
             log.append('speech done')
             return response
+        if url == BASE + '/health':
+            return httpx.Response(200, json={'status': 'ok', 'purpose': 'process health only'})
         if url.endswith(f'/Accounts/{SID}.json'):
             return httpx.Response(200, json={'type': 'Trial'})
         if url.endswith('/Calls.json'):
