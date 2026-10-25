@@ -1,7 +1,7 @@
 import {
+  TriangleAlert,
   Check,
   CheckCheck,
-  Circle,
   Phone,
   ScanLine,
   Sparkles,
@@ -63,24 +63,24 @@ export default function EventTrace({
                 className={`trace-event ${incident.priority === "critical" ? "critical" : ""} ${expanded ? "expanded" : ""}`}
               >
                 <div className="trace-summary">
-                  <span className="trace-node">
-                    <Circle size={7} fill="currentColor" />
-                  </span>
                   <div>
                     <span className="trace-meta">
-                      <time>
-                        {incident.media_time_ms === undefined
-                          ? "EVENT"
-                          : `${clock(incident.media_time_ms)}${incident.media_end_time_ms !== undefined ? ` — ${clock(incident.media_end_time_ms)}` : ""}`}
-                      </time>
+                      <span className="incident-badge"><TriangleAlert size={11} />Incident</span>
+                      <span className="trace-time-tags">
+                      {incident.media_time_ms === undefined ? <span>EVENT</span> : <>
+                        <button className="trace-seek-tag" onClick={() => onSeek(incident.media_time_ms! / 1000)} aria-label={`Seek to start ${clock(incident.media_time_ms)}`}>{clock(incident.media_time_ms)}</button>
+                        {incident.media_end_time_ms !== undefined && <button className="trace-seek-tag" onClick={() => onSeek(incident.media_end_time_ms! / 1000)} aria-label={`Seek to end ${clock(incident.media_end_time_ms)}`}>{clock(incident.media_end_time_ms)}</button>}
+                      </>}
+                      </span>
                       {incident.origin !== "fixture" && <span>{incident.priority.toUpperCase()}</span>}
                     </span>
-                    <h3>{incident.title}</h3>
-                    <span className={`trace-status ${incident.status}`}>
+                    <div className="trace-title-row"><h3>{incident.title}</h3>                    <span className={`trace-status ${incident.status}`}>
+                      {incident.status === "resolved" && <Check size={11} />}
                       {incident.status === "open"
                         ? "Needs review"
                         : incident.status}
                     </span>
+</div>
                     {incident.assigned_responder &&
                       (incident.status === "acknowledged" ||
                         incident.status === "resolved") && (

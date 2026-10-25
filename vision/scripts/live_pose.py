@@ -73,7 +73,7 @@ def main():
                 writer = cv2.VideoWriter(a.save, cv2.VideoWriter_fourcc(*"mp4v"), 15.0, (w, h))
             writer.write(out)
         else:
-            cv2.imshow("NestWatch pose (q to quit)", out)
+            cv2.imshow("ollo pose (q to quit)", out)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
     src.stop()

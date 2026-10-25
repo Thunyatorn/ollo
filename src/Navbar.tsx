@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Incident } from "./types";
-import { Bell, Eye, History, LogOut, MoreHorizontal, Settings2 } from "lucide-react";
+import { Bell, History, LogOut, MoreHorizontal, Settings2 } from "lucide-react";
+import Brand from "./Brand";
 import "./navbar.css";
 
 type NavbarProps = {
@@ -32,10 +33,9 @@ export default function Navbar({
           <button
             className="brand compact-brand"
             onClick={() => onNavigate("monitor")}
-            aria-label="NestWatch monitor"
+            aria-label="ollo monitor"
           >
-            <Eye size={23} strokeWidth={1.6} />
-            NestWatch
+            <Brand />
           </button>
           <div className="account-area">
             <div className="header-account-identity"><span className="account-avatar" aria-hidden="true">A</span><span>{accountName}</span></div>

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, type RefObject } from "react";
+import TimelineOverview from "./TimelineOverview";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { AudioLines, TriangleAlert, Video } from "lucide-react";
 
 export type TimelineMarker = { id: string; time: number; endTime?: number; title: string; demo?: boolean };
@@ -24,10 +25,43 @@ export default function EditorTimeline({ camera, room, duration, position, playi
   onSeek: (seconds: number, marker?: TimelineMarker) => void;
 }) {
   const playhead = useRef<HTMLDivElement>(null);
+  const timeline = useRef<HTMLDivElement>(null);
+  const viewport = useRef<HTMLDivElement>(null);
+  const [view, setView] = useState({ start: 0, span: 1 });
+  useEffect(() => { setView({ start: 0, span: 1 }); }, [duration, room]);
+  const [rulerWidth, setRulerWidth] = useState(800);
+  useEffect(() => {
+    if (!timeline.current) return;
+    const observer = new ResizeObserver(([entry]) => setRulerWidth(entry.contentRect.width));
+    observer.observe(timeline.current);
+    return () => observer.disconnect();
+  }, [liveDisconnected]);
+  useLayoutEffect(() => {
+    if (viewport.current) viewport.current.scrollLeft = view.start * viewport.current.clientWidth / view.span;
+  }, [view.start, view.span, rulerWidth]);
+  useEffect(() => {
+    const element = viewport.current;
+    if (!element) return;
+    const wheel = (event: WheelEvent) => {
+      const delta = event.deltaX || (event.shiftKey ? event.deltaY : 0);
+      if (!delta) return;
+      event.preventDefault();
+      const max = element.scrollWidth - element.clientWidth;
+      if (max <= 1 || (element.scrollLeft <= 0 && delta < 0) || (element.scrollLeft >= max - 1 && delta > 0)) {
+        element.firstElementChild?.animate([{ transform: "translateX(0)" }, { transform: `translateX(${delta > 0 ? -4 : 4}px)` }, { transform: "translateX(0)" }], { duration: 180 });
+      } else element.scrollLeft += delta;
+    };
+    element.addEventListener("wheel", wheel, { passive: false });
+    return () => element.removeEventListener("wheel", wheel);
+  }, [liveDisconnected]);
   const selection = selectedId;
   const clearAndSeek = (time: number) => onSeek(time);
   const anchor = useRef({ position, at: performance.now() });
   const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 120;
+  const targetInterval = safeDuration * view.span / Math.max(2, Math.min(6, Math.floor(rulerWidth / 180)));
+  const interval = [.1, .2, .5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200].find(value => value >= targetInterval) ?? Math.ceil(targetInterval / 3600) * 3600;
+  const minorInterval = interval / 5;
+  const tickCount = Math.floor(safeDuration / minorInterval + .00001);
   useEffect(() => { anchor.current = { position, at: performance.now() }; }, [position, playing, room]);
   useEffect(() => {
     let frame = 0;
@@ -49,9 +83,15 @@ export default function EditorTimeline({ camera, room, duration, position, playi
   if (liveDisconnected) return <div className="editor-timeline live-timeline" aria-label="Live camera timeline, not connected">
     <div className="editor-ruler"><span>Live feed</span><span>Waiting for signal</span></div>
     <div className="editor-track"><div className="editor-clip"><div className="editor-clip-name"><Video size={12} /><strong>{camera}</strong><span className="live-feed-badge">LIVE</span></div><div className="live-timeline-waiting">Not connected</div></div></div>
-    <div className="editor-track-caption"><span><i />Incidents</span></div>
   </div>;
-  return <div className="editor-timeline"
+  return <div className="editor-timeline" ref={timeline}>
+    <TimelineOverview start={view.start} span={view.span} onChange={(start, span) => setView({ start, span })} />
+    <div className="timeline-viewport" ref={viewport} onScroll={event => {
+      const element = event.currentTarget;
+      const start = element.scrollLeft / (element.clientWidth / view.span);
+      if (Math.abs(start - view.start) > .0001) setView(current => ({ ...current, start }));
+    }}>
+    <div className="timeline-content" style={{ width: `${100 / view.span}%` }}
       onPointerDown={e => {
         if (e.button !== 0) return;
         const target = e.target instanceof Element ? e.target : null;
@@ -68,7 +108,13 @@ export default function EditorTimeline({ camera, room, duration, position, playi
       }}
       onPointerUp={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); }}
     >
-    <div className="editor-ruler" aria-hidden="true">{[0, 1, 2, 3, 4].map(n => <span key={n}>{timecode(safeDuration * n / 4)}</span>)}</div>
+    <div className="editor-ruler" aria-hidden="true">
+      <div className="editor-ruler-ticks">{Array.from({ length: tickCount + 1 }, (_, index) => <i key={index} className={index % 5 === 0 ? "major" : ""} style={{ left: `${index * minorInterval / safeDuration * 100}%` }} />)}</div>
+      {Array.from({ length: Math.floor(safeDuration / interval + .00001) + 1 }, (_, index) => {
+        const time = index * interval;
+        return <span className={`ruler-label ${index === 0 ? "first" : time >= safeDuration - .00001 ? "last" : ""}`} key={index} style={{ left: `${time / safeDuration * 100}%` }}>{interval < 1 ? `${time.toFixed(1)}s` : timecode(time)}</span>;
+      })}
+    </div>
     <div className="editor-track">
       <div className="editor-clip">
         <div className="editor-clip-name"><Video size={12} /><strong>{camera}</strong><span>{waveform ? <AudioLines size={12} /> : "VIDEO"}</span></div>
@@ -86,6 +132,7 @@ export default function EditorTimeline({ camera, room, duration, position, playi
       })}
     </div>
     <div className="editor-playhead" ref={playhead} style={{ left: `${position / safeDuration * 100}%` }} aria-hidden="true"><span /></div>
-    <div className="editor-track-caption"><span><i />Incidents</span></div>
+    </div>
+    </div>
   </div>;
 }

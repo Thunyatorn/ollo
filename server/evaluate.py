@@ -92,7 +92,7 @@ async def run_clip(engine, path: Path, settings: dict) -> dict:
 def markdown(report: dict, clips: list[dict], split: str | None, negative_hours: float) -> str:
     fmt = lambda v, ci=None: '—' if v is None else f'{v:.0%}' + (f' ({ci[0]:.0%}–{ci[1]:.0%})' if ci else '')
     negatives = sum(1 for c in clips if not c['events'])
-    lines = [f"# NestWatch evaluation · split: {split or 'all'}", '',
+    lines = [f"# ollo evaluation · split: {split or 'all'}", '',
              f'{len(clips)} staged clips ({negatives} negative, {negative_hours * 60:.1f} min of negative footage). '
              'Staged clips measure this prototype on this footage; they are not deployment accuracy.', '',
              '| Kind | Hits | Missed | False alarms | Precision (95% CI) | Recall (95% CI) | Mean delay | False alarms / hour |',
@@ -121,7 +121,7 @@ def evaluate(labels_path, split: str | None = None) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Run NestWatch detection offline on labeled clips.')
+    parser = argparse.ArgumentParser(description='Run ollo detection offline on labeled clips.')
     parser.add_argument('labels')
     parser.add_argument('--split', choices=['tune', 'test'])
     parser.add_argument('--out', default=None, help='Directory for eval.json and eval.md (default: next to the label file)')

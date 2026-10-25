@@ -1,4 +1,4 @@
-// Shared contracts for NestWatch. Source of truth: CLUADE.md ("Connections" > "Message formats").
+// Shared contracts for ollo. Source of truth: CLUADE.md ("Connections" > "Message formats").
 
 export type Severity = 'high' | 'medium' | 'low';
 

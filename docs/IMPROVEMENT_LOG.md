@@ -15,7 +15,7 @@ Each iteration finds the current biggest bottleneck, makes one focused change, v
 
 ## Iteration 1: local YOLO pose and multi-person tracking (2026-10-24)
 
-**Bottleneck.** The only detector was OpenCV HOG: one upright adult-sized person at a time, boxes only, no keypoints. Every NestWatch event (falls, seizure-like movement, hands at throat, prediction) needs body keypoints and stable per-person IDs, so nothing else on the roadmap could be built on it.
+**Bottleneck.** The only detector was OpenCV HOG: one upright adult-sized person at a time, boxes only, no keypoints. Every ollo event (falls, seizure-like movement, hands at throat, prediction) needs body keypoints and stable per-person IDs, so nothing else on the roadmap could be built on it.
 
 **Change.**
 - `server/vision.py`: YOLO26n-pose (Ultralytics, CPU PyTorch) with ByteTrack IDs. Each tracked person gets their own zone hysteresis. A person missing from a frame is treated as missing data, never as outside, and is forgotten after 1.5 s. The ByteTrack state restarts on session reset.
@@ -42,7 +42,7 @@ Through the full engine on a 40-frame simulated camera pan: 4 distinct track IDs
 
 ## Iteration 2: keypoint event rules (2026-10-24)
 
-**Bottleneck.** The only event was restricted-zone entry. The pose keypoints from iteration 1 went unused, so four of NestWatch's core events (possible choking, falls, seizure-like movement, prolonged stillness) did not exist.
+**Bottleneck.** The only event was restricted-zone entry. The pose keypoints from iteration 1 went unused, so four of ollo's core events (possible choking, falls, seizure-like movement, prolonged stillness) did not exist.
 
 **Change.**
 - New `server/events.py`, with pure-math rules per tracked person. Distances are aspect-corrected and normalized by the person's median upright height, so thresholds hold at any distance from the camera and do not shrink during a fall.
@@ -263,7 +263,7 @@ My first attempt at the draft-only check reset the session mid-test, so no frame
 **Verification first.** Playwright was never installed, so the repository's smoke scripts had never run here. I installed it (1.64, headless Chromium). Both existing suites passed against all M1–M4 changes before any UI work. A new `scripts/design-smoke.mjs` (`npm run test:design`) is the acceptance test for M5. It injects a tracked, warned person by intercepting `/api/frames` and echoing the posted epoch and media time, so it checks rendering independently of detection.
 
 **What changed.**
-- **UI-6 branding.** NestWatch in the title, the brand, the camera label and downloads; no visible "Lookout" text. Internal type names and the settings storage key are unchanged, so saved settings survive.
+- **UI-6 branding.** ollo in the title, the brand, the camera label and downloads; no visible "Lookout" text. Internal type names and the settings storage key are unchanged, so saved settings survive.
 - **UI-6 skeletons.** Each tracked person is drawn as a skeleton (16 COCO limb pairs, confident keypoints only) under their labeled box.
 - **UI-4 floor plan.** A Map button toggles a top-down inset in meters. It shows zones in force, landmarks, calibration points, each person as a dot with their track ID, a warned person's predicted path in amber, and a 1 m scale bar. The server adds `floor_plan` to the state and `floor` and `approach.floor_path` to overlays. Without calibration, the inset says to calibrate first.
 - **UI-5 phone view.** Acknowledging on `/respond/{id}` records the channel `app` (operator endpoints accept only `dashboard` or `app`; keypad and voice still require their verified webhooks). The page shows "Handled by ⟨name⟩ via ⟨channel⟩".
@@ -307,7 +307,7 @@ These clips are synthetic composites (a cut-out photo moved across a floor). The
   - `GET /api/camera/frame?after=N` long-polls for the analyzed JPEG plus the overlays computed from it, so boxes always match the picture. While paused, frames keep coming without overlays.
   - Health: `camera.capture` reports the masked source (never the URL password), `connecting`/`live`/`offline`, the camera's frame rate and the last error. No new frame for 2 s, or a camera that won't open, makes `camera.health` `offline`, and `camera_offline` and `camera_online` events are logged. The reader reopens every 2 s, and RTSP/HTTP reads time out after 5 s.
   - A reset, any other source, or shutdown releases the camera.
-- Dashboard: a "Camera read by the NestWatch server" option in the source dialog. The live picture comes from the long poll, so no timers are involved. A reload returns to the server camera. The offline overlay names the source and says it is reconnecting, and the footer says "no frames" instead of the last 3 s rate.
+- Dashboard: a "Camera read by the ollo server" option in the source dialog. The live picture comes from the long poll, so no timers are involved. A reload returns to the server camera. The offline overlay names the source and says it is reconnecting, and the footer says "no frames" instead of the last 3 s rate.
 
 **Found while testing.**
 - The rate in the footer (SRC-2) is measured over the last 3 s of frames, so it still read 12.6 fps for about a second after the camera went offline. The footer now says "no frames" whenever health is offline; the SRC-2 calculation is unchanged.

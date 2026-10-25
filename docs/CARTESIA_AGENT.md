@@ -1,6 +1,6 @@
 # Cartesia voice agent setup (ESC-3)
 
-NestWatch can call the backup caregiver with a Cartesia voice agent that understands "I'm on it" instead of a keypad press. The server side is built and tested with mocked HTTP. The agent itself lives in your Cartesia account; create it once, as described below. The field names come from Cartesia's docs (webhook tools, dynamic variables, outbound calls), but check them against the console when you set it up, because this setup has not been run against a real account.
+ollo can call the backup caregiver with a Cartesia voice agent that understands "I'm on it" instead of a keypad press. The server side is built and tested with mocked HTTP. The agent itself lives in your Cartesia account; create it once, as described below. The field names come from Cartesia's docs (webhook tools, dynamic variables, outbound calls), but check them against the console when you set it up, because this setup has not been run against a real account.
 
 ## 1. Environment (`.env`)
 
@@ -22,13 +22,13 @@ If Twilio and Cartesia TTS are also configured, a failed agent call falls back t
 
 **Welcome message:**
 
-> This is NestWatch for {{caregiver}}. {{alert}} in the {{room}}. Can you check on it now?
+> This is ollo for {{caregiver}}. {{alert}} in the {{room}}. Can you check on it now?
 
 **Instructions:**
 
 > You are calling a daycare caregiver about a safety alert from a camera. Say what the alert is and which room, then ask whether they can check now. If they say yes, or anything like "I'm on it", call `acknowledge_alert` with decision "acknowledge". If they say they cannot, call it with decision "decline". Then repeat the tool's reply to them and end the call. Never describe the alert as a diagnosis, and never give medical advice. If they ask what happened, say only what the alert says.
 
-NestWatch fills `{{caregiver}}`, `{{alert}}` and `{{room}}` for each call through `dynamic_variables`.
+ollo fills `{{caregiver}}`, `{{alert}}` and `{{room}}` for each call through `dynamic_variables`.
 
 ## 3. Webhook tool `acknowledge_alert`
 

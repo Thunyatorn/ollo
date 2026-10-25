@@ -1,4 +1,4 @@
-// NestWatch Spacetime module. Spec: CLUADE.md ("Spacetime backend").
+// ollo Spacetime module. Spec: CLUADE.md ("Spacetime backend").
 // Rule 1: this module is the only place alert state changes.
 import { schema, table, t, SenderError } from 'spacetimedb/server';
 import type { InferSchema, ReducerCtx } from 'spacetimedb/server';

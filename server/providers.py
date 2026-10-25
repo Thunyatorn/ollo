@@ -72,7 +72,7 @@ class Calls:
         self.speech_wait=10.0
 
     def message(self, incident):
-        return 'This is a NestWatch alert for '+incident['room']+'. '+KINDS.get(incident['kind'],KINDS['boundary'])[1]+' Please check the room immediately. Press 1 to acknowledge, or 2 if you cannot respond.'
+        return 'This is an ollo alert for '+incident['room']+'. '+KINDS.get(incident['kind'],KINDS['boundary'])[1]+' Please check the room immediately. Press 1 to acknowledge, or 2 if you cannot respond.'
 
     async def speech(self, text):
         """Cartesia audio for a message, reused once made."""

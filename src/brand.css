@@ -1,0 +1,16 @@
+.ollo-logo {
+  display: block;
+  flex: 0 0 auto;
+  width: auto;
+  height: 32px;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.workspace-closed > .ollo-logo { margin: 0 auto 20px; }
+
+.app-navbar .ollo-logo { height: 24px; }
+
+@media (max-width: 600px) {
+  .app-navbar .ollo-logo { height: 21px; }
+}

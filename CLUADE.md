@@ -1,10 +1,10 @@
-# NestWatch Component Spec
+# ollo Component Spec
 
 Oct 23, 2026 · @Thunyatorn Jirachaisri
 
 ## Overview
 
-NestWatch has seven components in three places: two at the daycare (the vision service and the wrist buzzer), two in the cloud (Spacetime and the worker service), two apps (dashboard and phone), plus outside services reached only through the worker.
+ollo has seven components in three places: two at the daycare (the vision service and the wrist buzzer), two in the cloud (Spacetime and the worker service), two apps (dashboard and phone), plus outside services reached only through the worker.
 
 &#91;embedded content: component map · 7 components, 16 links\]
 
@@ -285,13 +285,13 @@ The phone app is the caregiver's pocket view, built as a mobile web app (PWA): i
 
 Every outside service is called only by the worker, and each one receives the least data it needs.
 
-| Service | What it does for NestWatch | What it receives | What it never receives |
+| Service | What it does for ollo | What it receives | What it never receives |
 | --- | --- | --- | --- |
 | Claude API | Second opinions, rule drafts, incident reports, daily summaries | Event logs, blurred key frames, rule text, named areas | Live video, unblurred images, phone numbers |
 | Cartesia | Speaks the escalation message | The message text, such as "A child entered the stairs area 20 seconds ago. Press 1 if you're on it." | Images, names of children |
 | Twilio | Places the call and reports the key press | The backup caregiver's phone number and the audio link | Images, event logs |
 | Moss (optional) | Understands spoken replies during the call | Call audio | Images, event logs |
-| Apify | Collects recall notices for children's products | Nothing from NestWatch; it scrapes public recall listings | Any daycare data |
+| Apify | Collects recall notices for children's products | Nothing from ollo; it scrapes public recall listings | Any daycare data |
 
 **Model choice:** use a fast, low-cost Claude model for second opinions, where speed matters, and a stronger one for reports and rule drafts, where quality matters more than a few seconds.
 

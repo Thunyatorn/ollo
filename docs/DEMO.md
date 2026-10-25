@@ -1,4 +1,4 @@
-# NestWatch demo playbook
+# ollo demo playbook
 
 A 2-minute live demo that ends with a teammate's phone ringing. Every step below uses a feature that is built and tested; the requirement IDs refer to [SPEC.md](SPEC.md).
 
@@ -17,7 +17,7 @@ A 2-minute live demo that ends with a teammate's phone ringing. Every step below
 
 ## On site (10 minutes before)
 
-1. Point the laptop webcam at a clear floor area. Tape a rectangle on the floor as "the stairs", plus 5 marks whose positions you measure in meters. Connect the webcam as the server camera (Settings → Manage source → Camera read by the NestWatch server, index `0`), so analysis keeps running if the dashboard is minimized (SRC-4).
+1. Point the laptop webcam at a clear floor area. Tape a rectangle on the floor as "the stairs", plus 5 marks whose positions you measure in meters. Connect the webcam as the server camera (Settings → Manage source → Camera read by the ollo server, index `0`), so analysis keeps running if the dashboard is minimized (SRC-4).
 2. **Calibrate.** Use the ruler button: click the 5 marks and type their positions. The panel should report an error under 0.10 m (DET-9).
 3. **Draw the landmark.** Shield button → Draw landmark: outline the taped rectangle and name it "Stairs" (AI-6).
 4. Open the Map button, so the floor-plan inset is visible (UI-4).
@@ -48,14 +48,14 @@ A 2-minute live demo that ends with a teammate's phone ringing. Every step below
 
 ## Likely questions
 
-- **"What if it misses something?"** Show the eval table: precision and recall with 95% intervals, and false alarms per hour, on held-out staged clips. NestWatch supports supervision and never replaces it, and every alert says what video cannot tell.
+- **"What if it misses something?"** Show the eval table: precision and recall with 95% intervals, and false alarms per hour, on held-out staged clips. ollo supports supervision and never replaces it, and every alert says what video cannot tell.
 - **"Privacy?"** Live video never leaves the laptop. Only a few face-blurred crops of the flagged person go to Claude, and only after an alert (opt-in). Clips are blurred and deleted after 7 days.
 - **"Cost?"**
   - Detection: $0 per camera-hour (local CPU, about 1.3 cores at 12 fps).
   - Claude second opinion: about $0.0003 (Haiku 5.5) to $0.01 (Opus 5.5) per alert, and $0 while nothing happens.
   - Rule drafts and reports: cents.
   - Calls: provider per-minute rates.
-- **"Why not a baby monitor?"** A monitor shows video. NestWatch predicts, alerts, makes sure someone owns the alert, and writes the record.
+- **"Why not a baby monitor?"** A monitor shows video. ollo predicts, alerts, makes sure someone owns the alert, and writes the record.
 
 ## Honesty rules for the stage
 

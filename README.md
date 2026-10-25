@@ -1,6 +1,6 @@
-# NestWatch
+# ollo
 
-NestWatch is a real-time safety monitoring system that connects to existing CCTV security cameras, detects potential safety incidents, and initiates a response through caregiver notifications and AI agent phone calls. The goal is to turn camera footage into timely action: reach a caregiver, confirm someone is responding, and escalate critical emergencies to 911 through a configured emergency-response workflow. (The repository and API keep the working name `lookout`.)
+ollo is a real-time safety monitoring system that connects to existing CCTV security cameras, detects potential safety incidents, and initiates a response through caregiver notifications and AI agent phone calls. The goal is to turn camera footage into timely action: reach a caregiver, confirm someone is responding, and escalate critical emergencies to 911 through a configured emergency-response workflow. (The repository and API keep the working name `lookout`.)
 
 ## Project goal
 

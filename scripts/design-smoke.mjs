@@ -63,10 +63,10 @@ try {
   await api("/api/session/reset");
 
   // UI-6 branding.
-  assert.match(await page.title(), /NestWatch/);
+  assert.match(await page.title(), /ollo/);
   const text = await page.evaluate(() => document.body.innerText);
   assert.ok(!/lookout/i.test(text), "No visible Lookout text");
-  await page.getByText(/NestWatch/).first().waitFor();
+  await page.getByRole("button", { name: "ollo monitor" }).waitFor();
   await page.getByText("Demo workspace").first().waitFor(); // Illustration stays labeled.
 
   // UI-4 without calibration explains what is needed.
@@ -133,7 +133,7 @@ try {
   await api("/api/calibration", "DELETE");
   await api("/api/session/reset");
   assert.deepEqual(errors, [], "No browser runtime exceptions");
-  console.log("Passed: NestWatch branding, labeled demo state, floor plan (uncalibrated hint, zones, person, predicted path), skeleton with track label, mobile respond with owner via app, no horizontal scroll; no runtime exceptions.");
+  console.log("Passed: ollo branding, labeled demo state, floor plan (uncalibrated hint, zones, person, predicted path), skeleton with track label, mobile respond with owner via app, no horizontal scroll; no runtime exceptions.");
 } finally {
   await browser.close();
 }

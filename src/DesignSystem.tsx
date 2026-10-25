@@ -1,4 +1,5 @@
 import Navbar from "./Navbar";
+import Brand from "./Brand";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Activity,
@@ -10,7 +11,6 @@ import {
   ChevronDown,
   Clock3,
   Download,
-  Eye,
   Grid2X2,
   MessageSquare,
   Pause,
@@ -172,9 +172,9 @@ export default function DesignSystem() {
       <Navbar />
       <aside className="ds-nav">
         <a href="/" className="ds-logo">
-          <Eye size={26} /> ollo<span>DESIGN SYSTEM</span>
+          <Brand /><span>DESIGN SYSTEM</span>
         </a>
-        <p className="ds-muted">A shared language for calmer care.</p>
+        <p className="ds-muted">A shared language for video intelligence.</p>
         <nav aria-label="Design system sections">
           {sections.map((name, i) => (
             <a key={name} href={`#${slug(name)}`}>

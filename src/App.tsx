@@ -1,4 +1,5 @@
 import Navbar from "./Navbar";
+import Brand from "./Brand";
 import { useEffect, useRef, useState } from "react";
 import {
   Activity,
@@ -25,6 +26,7 @@ import {
   RotateCcw,
   ScanLine,
   Shield,
+  TriangleAlert,
   Upload,
   Video,
   Webcam,
@@ -136,11 +138,12 @@ const rooms = [
   },
   { name: "Live camera", id: "CAM 03", image: "", alt: "", tracks: [] },
 ];
-function DemoScene({ room, zones }: { room: number; zones: boolean }) {
+function DemoScene({ room, zones, position }: { room: number; zones: boolean; position?: number }) {
   const camera = rooms[room];
   return (
     <div className="demo-scene">
       <img src={camera.image} alt={camera.alt} />
+      {position !== undefined && <div className="camera-clock footage-clock"><span>{camera.id} · EAST WING</span><strong>{stamp(position)}</strong></div>}
       {zones && (
         <div className="demo-tracks" aria-label="Illustrative tracking boxes">
           {camera.tracks.map((t, i) => (
@@ -172,6 +175,7 @@ export default function App() {
   const [signedOut, setSignedOut] = useState(() => sessionStorage.getItem("nestwatch-workspace-closed") === "true");
   const audioFile = useRef<File | null>(null);
   const [audioPeaks, setAudioPeaks] = useState<number[] | null>(null);
+  const [removedCameras, setRemovedCameras] = useState<number[]>([]);
   const [mainCamera, setMainCamera] = useState(() => { try { const saved = Number(localStorage.getItem("ollo-main-camera")); return Number.isInteger(saved) && saved >= 0 && saved < rooms.length ? saved : 0; } catch { return 0; } });
   const [cameraLayout, setCameraLayout] = useState<CameraLayout>("single");
   const [reviewDate, setReviewDate] = useState<string | null>(null);
@@ -799,7 +803,7 @@ export default function App() {
     audioFile.current = null;
     setAudioPeaks(null);
     if (!connected) {
-      setCameraMessage("Start the NestWatch server to use a server camera.");
+      setCameraMessage("Start the ollo server to use a server camera.");
       return;
     }
     setBusy(true);
@@ -893,7 +897,7 @@ export default function App() {
   const mobileId = window.location.pathname.startsWith("/respond/")
     ? window.location.pathname.split("/").pop()
     : null;
-  if (signedOut) return <div className="workspace-closed"><Eye size={34} /><h1>Workspace closed</h1><button className="button primary" onClick={() => { sessionStorage.removeItem("nestwatch-workspace-closed"); setSignedOut(false); setPage("monitor"); }}>Open local workspace</button></div>;
+  if (signedOut) return <div className="workspace-closed"><Brand /><h1>Workspace closed</h1><button className="button primary" onClick={() => { sessionStorage.removeItem("nestwatch-workspace-closed"); setSignedOut(false); setPage("monitor"); }}>Open local workspace</button></div>;
   if (mobileId) {
     const incident = state.incidents.find((i) => i.id === mobileId);
     return (
@@ -1081,7 +1085,7 @@ export default function App() {
                             </div>
                           )
                         ) : (
-                          <DemoScene room={room} zones={zones} />
+                          <DemoScene room={room} zones={zones} position={position} />
                         )}
                         <div className="camera-shade" />
                         <div className="on-video-top">
@@ -1109,10 +1113,10 @@ export default function App() {
                               </span>
                             </div>
                           )}
-                          <div className="camera-clock">
+                          {sourceType !== "illustration" && <div className="camera-clock">
                             <span>CAM 01 · EAST WING</span>
                             <strong>{stamp(position)}</strong>
-                          </div>
+                          </div>}
                         </div>
                         {sourceType !== "illustration" && (
                           <div
@@ -1631,7 +1635,7 @@ export default function App() {
                       </>
                     ) : (
                       <>
-                        <DemoScene room={room} zones={zones} />
+                        <DemoScene room={room} zones={zones} position={position} />
                         <div className="camera-shade" />
                       </>
                     )}
@@ -1644,7 +1648,7 @@ export default function App() {
 
                 </div>
                 {cameraLayout !== "single" && <div className="additional-cameras">
-                  {rooms.map((camera, index) => index !== room && <button className="camera-preview-card" key={camera.id} onClick={() => { setRoom(index); }} aria-label={`Focus ${camera.name}`}>
+                  {rooms.map((camera, index) => index !== room && !removedCameras.includes(index) && <button className="camera-preview-card" key={camera.id} onClick={() => { setRoom(index); }} aria-label={`Focus ${camera.name}`}>
                     <div className="preview-card-header"><span><Video size={14} />{camera.name}</span><small>{camera.id}</small></div>
                     <div className="preview-card-scene">{index === 2 ? <LiveCameraPlaceholder /> : index === 0 && sourceType !== "illustration" ? serverFrame && sourceType === "server" ? <img src={serverFrame} alt="Current server camera preview" /> : <div className="preview-source-placeholder"><Video size={24} /><span>{sourceType === "webcam" ? "Webcam connected" : "Video source connected"}</span><small>Select to view and control</small></div> : <DemoScene room={index} zones={zones} />}</div>
                     <div className="preview-card-footer"><span>{index === 2 ? "Live feed · not connected" : index === 0 && sourceType !== "illustration" ? "Connected source" : "Illustrative demo · not a live feed"}</span><Maximize2 size={12} /></div>
@@ -1655,13 +1659,13 @@ export default function App() {
 
               </div>
               <div className="monitor-side-panel">
-                <details className="sidebar-section" open><summary>Date & view<ChevronDown size={13} /></summary>
+                <details className="sidebar-section" open><summary>Date & view</summary>
                 <MonitoringControls date={reviewDate} onDate={setReviewDate} layout={cameraLayout} onLayout={setCameraLayout} eventDates={new Set((room !== 0 || sourceType === "illustration" ? mockIncidents : state.incidents).map(i => incidentDate(i.opened_at)))} />
                 </details>
-                <details className="sidebar-section" open><summary>Cameras<ChevronDown size={13} /></summary>
-                  <CameraSidebar rooms={rooms} selected={room} main={mainCamera} onSelect={setRoom} onMain={index => { setMainCamera(index); setRoom(index); try { localStorage.setItem("ollo-main-camera", String(index)); } catch { /* Keep selection available without storage. */ } }} />
+                <details className="sidebar-section" open><summary>Cameras</summary>
+                  <CameraSidebar rooms={rooms} selected={room} main={mainCamera} removed={removedCameras} onRemove={index => { const remaining = rooms.map((_, i) => i).filter(i => i !== index && !removedCameras.includes(i)); if (!remaining.length) return; setRemovedCameras(previous => [...previous, index]); if (room === index) setRoom(remaining.includes(mainCamera) ? mainCamera : remaining[0]); if (mainCamera === index) { setMainCamera(remaining[0]); try { localStorage.setItem("ollo-main-camera", String(remaining[0])); } catch { /* Storage is optional. */ } } }} onSelect={setRoom} onMain={index => { setMainCamera(index); setRoom(index); try { localStorage.setItem("ollo-main-camera", String(index)); } catch { /* Keep selection available without storage. */ } }} />
                 </details>
-                <details className="sidebar-section sidebar-events" open><summary>Event trace<span>{traceState.incidents.length.toString().padStart(2, "0")}</span><ChevronDown size={13} /></summary>
+                <details className="sidebar-section sidebar-events" open><summary>Event trace<span>{traceState.incidents.length.toString().padStart(2, "0")}</span></summary>
               <EventTrace
                 state={traceState}
                 room={room}
@@ -1727,6 +1731,7 @@ export default function App() {
                         </details>
 
                       </div>
+                      <div className="playback-incident-key"><TriangleAlert size={14} strokeWidth={2} /><span>Incidents</span><span className="incident-key-count">{room === 2 ? 0 : timelineMarkers.length}</span></div>
                     </div>
                     <EditorTimeline
                       camera={`${rooms[room].name} · ${rooms[room].id}`}
@@ -1795,7 +1800,7 @@ export default function App() {
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement("a");
                     a.href = url;
-                    a.download = "nestwatch-incidents.json";
+                    a.download = "ollo-incidents.json";
                     a.click();
                     URL.revokeObjectURL(url);
                   }}
@@ -2189,7 +2194,7 @@ export default function App() {
                   );
                   const a = document.createElement("a");
                   a.href = url;
-                  a.download = `nestwatch-incident-${report.id.slice(0, 8)}.md`;
+                  a.download = `ollo-incident-${report.id.slice(0, 8)}.md`;
                   a.click();
                   URL.revokeObjectURL(url);
                 }}
@@ -2263,7 +2268,7 @@ export default function App() {
               <div className="source-option">
                 <Cctv size={20} />
                 <span>
-                  Camera read by the NestWatch server
+                  Camera read by the ollo server
                   <small>
                     Webcam index or RTSP/HTTP stream · analysis continues when
                     this tab is hidden

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Seeds a LOCAL NestWatch database with a demo room, caregivers and a stairs zone.
+# Seeds a LOCAL ollo database with a demo room, caregivers and a stairs zone.
 # Run as the admin (the identity that published the module).
 #   VISION_ID=<hex identity of the vision service> [WORKER_ID=<hex>] ./scripts/seed-local.sh
 # The fake-vision tool prints its identity when it connects.
