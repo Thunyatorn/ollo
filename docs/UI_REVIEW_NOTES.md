@@ -1,3 +1,5 @@
+> Latest incident-thread behavior and persistence limits: [UI_ROUND2.md](UI_ROUND2.md).
+
 # Review screen implementation
 
 The inspector keeps the date at the top, gives the event trace the flexible space, and puts Overview/Grid view tabs in the top navigation. Existing incident acknowledgment, resolution and report requests remain connected to the app's original handlers.

@@ -1,7 +1,6 @@
 import { adaptIncidentThread, addIncidentNote, resolveIncidentThread } from "./incidentThreads";
 import { recordAudit } from "./reviewAudit";
 import type { IncidentThreadChanges } from "./types";
-import ReviewActions from "./ReviewActions";
 import Navbar from "./Navbar";
 import Brand from "./Brand";
 import { useEffect, useRef, useState } from "react";
@@ -41,7 +40,7 @@ import { initialState, request } from "./api";
 import EventTrace from "./EventTrace";
 import ResizableWorkspace from "./ResizableWorkspace";
 import LiveCameraPlaceholder from "./LiveCameraPlaceholder";
-import CameraSidebar from "./CameraSidebar";
+import CameraCard from "./CameraCard";
 import PlaybackTime from "./PlaybackTime";
 import { demoIncidents } from "./demoIncidents";
 import FullscreenControls from "./FullscreenControls";
@@ -119,10 +118,10 @@ type Rule = {
   status: "draft" | "active";
 };
 const demoTracks = [
-  { x: 9.3, y: 40.1, w: 9, h: 25.2 },
-  { x: 40.1, y: 36.2, w: 6.8, h: 16.4 },
-  { x: 57, y: 27, w: 6.2, h: 24 },
-  { x: 77.7, y: 16.5, w: 6, h: 21 },
+  { x: 9.3, y: 40.1, w: 9, h: 25.2, confidence: 0.94 },
+  { x: 40.1, y: 36.2, w: 6.8, h: 16.4, confidence: 0.89 },
+  { x: 57, y: 27, w: 6.2, h: 24, confidence: 0.92 },
+  { x: 77.7, y: 16.5, w: 6, h: 21, confidence: 0.96 },
 ];
 const rooms = [
   {
@@ -154,7 +153,9 @@ function DemoScene({ room, zones, position }: { room: number; zones: boolean; po
               key={i}
               style={{ left: `${t.x}%`, top: `${t.y}%`, width: `${t.w}%`, height: `${t.h}%` }}
             >
-              <span>{String(i + 1).padStart(2, "0")}</span>
+              <span title={`Illustrative detection · person · confidence ${t.confidence.toFixed(2)} · track ${i + 1}`}>
+                person <b className="detection-confidence">{t.confidence.toFixed(2)}</b><small className="detection-track-id">#{String(i + 1).padStart(2, "0")}</small>
+              </span>
             </div>
           ))}
         </div>
@@ -177,7 +178,6 @@ export default function App() {
   const [signedOut, setSignedOut] = useState(() => sessionStorage.getItem("nestwatch-workspace-closed") === "true");
   const audioFile = useRef<File | null>(null);
   const [audioPeaks, setAudioPeaks] = useState<number[] | null>(null);
-  const [removedCameras, setRemovedCameras] = useState<number[]>([]);
   const [cameraLayout, setCameraLayout] = useState<CameraLayout>("single");
   const [reviewDate, setReviewDate] = useState<string | null>(() => dateKey(new Date()));
   const [state, setState] = useState<LookoutState>(initialState),
@@ -281,13 +281,14 @@ export default function App() {
     demo: thread.source.origin === "fixture", notes: thread.messages.filter(message => message.kind === "note" && message.anchorSeconds !== undefined).map(message => ({ id: message.id, time: message.anchorSeconds!, title: message.text })),
   }));
   const playheadIncidentId = timelineMarkers.find(marker => marker.endTime !== undefined && position >= marker.time && position <= marker.endTime)?.id;
-  const selectedIncident = cameraIncidents.some(i => i.id === explicitIncident) ? explicitIncident : playheadIncidentId || null;
+  const selectedIncident = cameraIncidents.some(i => i.id === openedThreadId) ? openedThreadId : cameraIncidents.some(i => i.id === explicitIncident) ? explicitIncident : playheadIncidentId || null;
   function openIncidentThread(id: string, noteId?: string) {
     const at = new Date().toISOString();
     setExplicitIncident(id); setOpenedThreadId(id); setSelectedNoteId(noteId ?? null);
     setThreadChanges(current => ({ ...current, [id]: { ...current[id], messages: current[id]?.messages ?? [], lastReadAt: at } }));
     recordAudit({ action: "open_thread", userId: form.primary_name, cameraId: rooms[room].id, incidentId: id, at });
   }
+  useEffect(() => { setOpenedThreadId(null); setSelectedNoteId(null); setExplicitIncident(null); }, [room, reviewDate, currentSourceKey]);
   const active = state.incidents.find(
     (i) => i.status === "open" || i.status === "acknowledged",
   );
@@ -1064,14 +1065,7 @@ export default function App() {
             <ResizableWorkspace>
               <div className="monitor-column">
                 <div className={`camera-layout layout-${cameraLayout}`}>
-                <div className="camera-card">
-                  <div className="review-camera-header">
-                    <span className={`camera-state-dot ${room === 2 ? "offline" : "recorded"}`} aria-hidden="true" />
-                    <select aria-label="Select camera" value={room} onChange={event => { setRoom(Number(event.target.value)); setOpenedThreadId(null); setSelectedNoteId(null); }}>
-                      {rooms.map((camera, index) => !removedCameras.includes(index) && <option key={camera.id} value={index}>{camera.name} · {camera.id}</option>)}
-                    </select>
-                    <span>{room === 2 ? "Offline" : room !== 0 || sourceType === "illustration" ? "Illustrative" : isLiveFeed ? "Live" : "Recorded"}</span>
-                  </div>
+                <CameraCard rooms={rooms} camera={room} order={cameraLayout === "grid" ? room : undefined} onSelect={index => { setRoom(index); setOpenedThreadId(null); setSelectedNoteId(null); }} status={room === 2 ? "Offline" : room === 0 && sourceType !== "illustration" ? isLiveFeed ? "Live" : "Recorded" : undefined}>
                   <div
                     className={`camera-stage ${state.camera.health === "offline" ? "offline" : ""}`}
                     ref={stage}
@@ -1686,13 +1680,15 @@ export default function App() {
                     {room !== 2 && <FullscreenControls live={isLiveFeed} stage={stage} position={position} duration={duration} playing={playing} muted={muted || state.session.audio_permitted !== true} onToggle={() => { void togglePlay(); }} onMute={() => setMuted(m => !m)} onSeek={seekPlayback} />}
                   </div>
 
-                </div>
+                </CameraCard>
                 {cameraLayout !== "single" && <div className="additional-cameras">
-                  {rooms.map((camera, index) => index !== room && !removedCameras.includes(index) && <button className="camera-preview-card" key={camera.id} onClick={() => { setRoom(index); }} aria-label={`Focus ${camera.name}`}>
-                    <div className="preview-card-header"><span><Video size={14} />{camera.name}</span><small>{camera.id}</small></div>
-                    <div className="preview-card-scene">{index === 2 ? <LiveCameraPlaceholder /> : index === 0 && sourceType !== "illustration" ? serverFrame && sourceType === "server" ? <img src={serverFrame} alt="Current server camera preview" /> : <div className="preview-source-placeholder"><Video size={24} /><span>{sourceType === "webcam" ? "Webcam connected" : "Video source connected"}</span><small>Select to view and control</small></div> : <DemoScene room={index} zones={zones && canUseStaffUI} />}</div>
-                    <div className="preview-card-footer"><span>{index === 2 ? "Live feed · not connected" : index === 0 && sourceType !== "illustration" ? "Connected source" : "Illustrative demo · not a live feed"}</span><Maximize2 size={12} /></div>
-                  </button>)}
+                  {rooms.map((camera, index) => index !== room && <CameraCard key={camera.id} rooms={rooms} camera={index} order={cameraLayout === "grid" ? index : undefined} onSelect={selected => { setRoom(selected); setOpenedThreadId(null); setSelectedNoteId(null); }} status={index === 2 ? "Offline" : index === 0 && sourceType !== "illustration" ? isLiveFeed ? "Live" : "Recorded" : undefined}>
+                    <div className="camera-stage">
+                      <button className="camera-preview-content" onClick={() => { setRoom(index); setOpenedThreadId(null); setSelectedNoteId(null); }} aria-label={`Focus ${camera.name}`}>
+                        {index === 2 ? <LiveCameraPlaceholder /> : index === 0 && sourceType !== "illustration" ? serverFrame && sourceType === "server" ? <img src={serverFrame} alt="Current server camera preview" /> : <div className="preview-source-placeholder"><Video size={24} /><span>{sourceType === "webcam" ? "Webcam connected" : "Video source connected"}</span><small>Select to view and control</small></div> : <DemoScene room={index} zones={zones && canUseStaffUI} position={position} />}
+                      </button>
+                    </div>
+                  </CameraCard>)}
                   {cameraLayout === "grid" ? <div className="empty-camera-slot" aria-label="Empty camera slot 4" /> : <button className="add-camera-tile" onClick={() => { setCameraMessage(""); setSourceOpen(true); }}><Plus size={20} /><strong>Connect a camera</strong><span>RTSP or HTTP stream</span><small>One analyzed source at a time</small></button>}
                 </div>}
                 </div>
@@ -1723,7 +1719,6 @@ export default function App() {
                       <button className={`icon-button ${zones ? "enabled" : ""}`} aria-label="Toggle zone overlay" aria-pressed={zones} title="Toggle zone overlay" onClick={() => setZones(!zones)}><Focus size={14} /></button>
                       <button className="icon-button" aria-label="Fullscreen camera" title="Fullscreen" onClick={() => stage.current?.requestFullscreen?.()}><Maximize2 size={14} /></button>
                     </div>
-                    <ReviewActions cameraId={rooms[room].id} userId={form.primary_name} duration={duration} keptUntil={state.session.kept_until} audioPresent={!!audioPeaks} audioPermitted={state.session.audio_permitted === true} />
 
                     </div>
                     <EditorTimeline
@@ -1813,14 +1808,7 @@ export default function App() {
                 }}
               />
                 </details>
-                <details className="sidebar-section" open><summary>Cameras</summary>
-                  <CameraSidebar modes={[sourceType === "illustration" ? "Demo" : sourceType === "recording" ? "Recorded" : state.camera.capture?.status === "offline" ? "Offline" : "Live", "Demo", "Offline"]} thumbnails={[sourceType === "illustration" ? rooms[0].image : sourceType === "server" ? serverFrame : "", rooms[1].image, ""]} rooms={rooms} selected={room} removed={removedCameras} onSelect={setRoom} onRemove={index => {
-                    const remaining = rooms.map((_, i) => i).filter(i => i !== index && !removedCameras.includes(i));
-                    if (!remaining.length) return;
-                    setRemovedCameras(previous => [...previous, index]);
-                    if (room === index) setRoom(remaining[0]);
-                  }} />
-                </details>
+
 
               </div>
 

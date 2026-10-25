@@ -34,14 +34,9 @@
 .status-resolved .thread-row-heading > strong { color: var(--text-secondary); }
 .thread-row-heading > time { flex-shrink: 0; color: var(--text-secondary); font-size: var(--text-small); font-variant-numeric: tabular-nums; }
 .thread-row-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-small); color: var(--text-secondary); }
-.thread-unread { width: var(--space-1); height: var(--space-1); background: var(--primary); position: absolute; right: var(--space-1); top: var(--space-4); border-radius: var(--radius-small); }
 .thread-state { display: flex; flex: 1; min-height: var(--thread-panel-min-height); flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3); padding: var(--space-4); text-align: center; color: var(--text-secondary); font-size: var(--text-small); }
 .thread-state p { margin: 0; color: var(--text-primary); }
 .editor-workspace .incident-panel > .incident-thread-header { display: block; height: auto; flex-shrink: 0; padding: var(--space-3); background: transparent; border-bottom: 1px solid var(--edge-neutral); }
-.thread-title-line { display: flex; align-items: flex-start; gap: var(--space-2); }
-.thread-title-line > h2 { flex: 1; min-width: 0; margin: 0; font-size: var(--text-body); font-weight: 500; line-height: 1.5; color: var(--text-primary); }
-.thread-title-line > h2:focus-visible { outline: 2px solid var(--primary); outline-offset: var(--space-1); }
-.thread-title-line > .icon-button { flex-shrink: 0; padding: var(--space-1); }
 .thread-header-meta { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-3); font-size: var(--text-small); color: var(--text-secondary); }
 .thread-status { padding: var(--space-1) var(--space-2); border-radius: var(--radius-small); background: var(--surface-raised); }
 .thread-status.status-open { color: var(--status-open); }
@@ -56,7 +51,7 @@
 .thread-message-avatar.system-avatar { background: var(--surface-raised); color: var(--primary); padding: var(--space-2); }
 .thread-message-meta { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: baseline; }
 .thread-message-meta strong { font-size: var(--text-small); color: var(--text-primary); font-weight: 600; }
-.incident-panel .thread-time { color: var(--text-secondary); font-family: inherit; font-variant-numeric: tabular-nums; font-size: var(--text-small); padding: 0; background: transparent; border: 0; border-radius: var(--radius-small); white-space: nowrap; }
+.incident-panel .thread-time { color: var(--text-secondary); font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--text-small); padding: 0; background: transparent; border: 0; border-radius: var(--radius-small); white-space: nowrap; }
 .incident-panel button.thread-time:hover { color: var(--text-primary); text-decoration: underline; }
 .incident-panel p { font-size: var(--text-small); line-height: 1.6; color: var(--text-primary); margin: var(--space-2) 0 0; overflow-wrap: anywhere; }
 .thread-message.is-target { background: var(--surface-selected); outline: 1px solid var(--primary); border-radius: var(--radius-small); }
@@ -66,25 +61,10 @@
 .system-events-toggle { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) 0; font-size: var(--text-small); color: var(--text-secondary); }
 .thread-status-message { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-4) 0; color: var(--text-secondary); text-align: center; font-size: var(--text-small); line-height: 1.5; }
 .thread-status-message::before, .thread-status-message::after { content: ""; flex: 1; min-width: var(--space-2); border-top: 1px solid var(--edge-neutral); }
-.incident-panel .thread-notes-empty, .incident-panel .thread-confidence { color: var(--text-secondary); }
 .thread-context { margin-top: var(--space-4); font-size: var(--text-small); color: var(--text-secondary); }
 .thread-context summary { cursor: pointer; }
-.thread-composer { padding: var(--space-3); border-top: 1px solid var(--edge-neutral); flex-shrink: 0; background: var(--surface-base); }
-.thread-composer textarea { display: block; resize: none; width: 100%; min-height: var(--space-12); max-height: var(--thread-composer-max-height); overflow: auto; padding: var(--space-2); color: var(--text-primary); background: var(--surface-raised); border: 1px solid var(--edge-neutral); border-radius: var(--radius-small); font: inherit; font-size: var(--text-small); }
-.thread-composer textarea:focus { outline: 1px solid var(--primary); }
-.thread-compose-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
-.thread-compose-actions > button, .thread-resolve-trigger { display: inline-flex; align-items: center; gap: var(--space-1); padding: var(--space-1) var(--space-2); font-size: var(--text-small); min-height: var(--space-8); background: var(--surface-raised); color: var(--text-secondary); border-radius: var(--radius-small); cursor: pointer; }
-.thread-compose-actions .thread-mark { font-variant-numeric: tabular-nums; }
-.thread-compose-actions .thread-mark.is-attached { color: var(--text-primary); outline: 1px solid var(--primary); }
-.thread-compose-actions > button:not(:disabled):hover { background: var(--surface-hover); color: var(--text-primary); }
-.thread-resolve { position: relative; margin-left: auto; }
 .thread-resolve-trigger { background: var(--primary); color: var(--primary-ink); list-style: none; }
 .thread-resolve-trigger::-webkit-details-marker { display: none; }
-.thread-resolve > div { position: absolute; right: 0; bottom: calc(100% + var(--space-2)); z-index: 12; padding: var(--space-1); width: var(--thread-menu-width); background: var(--surface-overlay); box-shadow: var(--shadow-overlay); border: 1px solid var(--edge-neutral); border-radius: var(--radius-small); }
-.thread-resolve > div > button { display: block; text-align: left; width: 100%; padding: var(--space-2); font-size: var(--text-small); border-radius: var(--radius-small); }
-.thread-resolve > div > button:hover { background: var(--surface-hover); }
-.incident-panel .thread-session-note { color: var(--text-secondary); font-size: var(--text-small); }
-.thread-title-line .event-export { display: block; margin: 0; flex-shrink: 0; }
 .thread-actions { position: relative; }
 .thread-actions > summary { display: grid; place-items: center; cursor: pointer; width: var(--space-6); height: var(--space-6); color: var(--text-secondary); list-style: none; }
 .thread-actions > summary::-webkit-details-marker { display: none; }
@@ -97,13 +77,126 @@
 @media (prefers-reduced-motion: reduce) { .incident-panel.is-thread { animation: none; } }
 /* Phase C: preserve the owner's neutral nav, use small in-box tracking IDs. */
 .thread-row-heading { align-items: flex-start; }
-.thread-row-heading > strong { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.5; }
+.thread-row-heading > strong { min-width: 0; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.5; }
 .thread-row-meta { white-space: normal; overflow: visible; line-height: 1.5; }
 .review-camera-header { display: flex; align-items: center; flex: 0 0 auto; gap: var(--space-2); min-height: var(--space-8); padding: var(--space-1) var(--space-3); background: var(--surface-base); }
-.review-camera-header > select { min-width: 0; max-width: 100%; color: var(--text-primary); background: transparent; border: 0; font: inherit; font-size: var(--text-small); }
-.review-camera-header > select:focus-visible { outline: 2px solid var(--primary); }
 .review-camera-header > span:last-child { color: var(--text-secondary); font-size: var(--text-small); margin-left: auto; }
 .demo-person > span, .tracking-box > span { top: 0; left: 0; transform: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: inherit; font-size: var(--text-small); font-weight: 400; letter-spacing: normal; line-height: 1.5; padding: var(--space-1); border: 0; border-radius: var(--radius-small); background: var(--surface-base); color: var(--text-primary); }
-.monitor-column .playback-left > .timecode.seek-timecode { background: transparent; border: 0; }
+.monitor-column .playback-left > .timecode.seek-timecode { background: var(--surface-raised); border: 0; border-radius: var(--radius-small); overflow: hidden; }
+.seek-timecode > input { border-radius: var(--radius-small) 0 0 var(--radius-small); }
 .monitor-column .playback-left > .timecode.seek-timecode > input, .monitor-column .playback-left > .timecode.seek-timecode > .playback-duration { font-size: var(--text-small); font-variant-numeric: tabular-nums; }
-.thread-title-line .thread-actions > summary:focus-visible, .thread-resolve-trigger:focus-visible, .incident-panel button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+.workspace-view-tabs > button { min-width: 0; }
+.demo-person > span, .tracking-box > span { bottom: auto; height: auto; }
+
+/* Camera selection shares the header materials and keyboard focus treatment. */
+.review-camera-header .camera-picker { width: min(100%, 280px); border: 0; border-radius: var(--radius-small); }
+.review-camera-header .camera-picker-trigger { color: var(--text-primary); background: var(--surface-raised); gap: var(--space-2); padding: var(--space-1) var(--space-2); }
+.review-camera-header .camera-picker-trigger:hover, .review-camera-header .camera-picker.is-open .camera-picker-trigger { background: var(--surface-hover); }
+.review-camera-header .camera-picker-trigger:focus-visible, .review-camera-header .camera-picker-menu > button:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.review-camera-header .camera-picker-menu { top: calc(100% + var(--space-1)); left: 0; width: 100%; border: 1px solid var(--edge-neutral); border-radius: var(--radius-small); background: var(--surface-overlay); box-shadow: none; padding: var(--space-1); }
+.review-camera-header .camera-picker-label { display: none; }
+.review-camera-header .camera-picker-menu > button { color: var(--text-primary); border-radius: var(--radius-small); }
+.review-camera-header .camera-picker-menu > button:hover, .review-camera-header .camera-picker-menu > button:focus-visible { background: var(--surface-hover); }
+.review-camera-header .camera-picker-menu > button[aria-checked="true"] { color: var(--primary); background: var(--surface-selected); }
+.review-camera-header .camera-picker small { color: var(--text-secondary); font-size: var(--text-small); flex-shrink: 0; }
+
+/* YOLO-style class/confidence tags attach directly to the detection rectangle. */
+.demo-scene { container-type: inline-size; }
+.demo-person, .tracking-box { border: 2px solid var(--primary); border-radius: 0; box-shadow: none; }
+.demo-person > span, .tracking-box > span {
+  position: absolute; top: auto; bottom: 100%; left: -2px; transform: none;
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  width: max-content; max-width: none; height: auto; overflow: visible;
+  padding: 2px var(--space-1); border: 0; border-radius: 0;
+  background: var(--primary); color: var(--primary-ink);
+  font-family: var(--font-mono); font-size: var(--text-small); font-weight: 500; line-height: 1.5;
+  letter-spacing: normal; white-space: nowrap; text-overflow: clip;
+}
+.detection-confidence { font-weight: 500; }
+.detection-track-id { padding-left: var(--space-1); border-left: 1px solid color-mix(in srgb, var(--primary-ink) 35%, transparent); font: inherit; }
+.tracking-box.approaching { border-color: var(--status-open); }
+.tracking-box.approaching > span { background: var(--status-open); color: var(--surface-canvas); }
+@container (max-width: 480px) {
+  .demo-person > span { font-size: 10px; line-height: 1.3; gap: 2px; padding: 1px 3px; }
+  .demo-person .detection-track-id { display: none; }
+}
+@container (max-width: 320px) {
+  .demo-person .detection-confidence { display: none; }
+}
+
+/* Incident review follows a single message column with a compact source header. */
+.review-camera-header { padding: 0; gap: 0; }
+.review-camera-header > span:last-child { padding-right: var(--space-3); }
+.review-camera-header .camera-picker, .review-camera-header .camera-picker-trigger { border-radius: var(--radius-small); }
+.review-camera-header .camera-picker-trigger { min-height: var(--space-8); background: transparent; }
+.review-camera-header .camera-picker-menu { top: 100%; }
+.editor-workspace .incident-panel > .incident-thread-header { padding: var(--space-3) var(--space-4) var(--space-4); }
+.thread-navigation { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-4); }
+.thread-back { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--text-secondary); font-size: var(--text-small); padding: var(--space-1) 0; }
+.thread-back:hover { color: var(--text-primary); }
+.thread-navigation .event-export { padding: 0; margin: 0; }
+.thread-header-summary { display: flex; gap: var(--space-3); align-items: flex-start; }
+.thread-header-thumbnail { display: grid; place-items: center; width: var(--space-16); height: var(--space-12); flex-shrink: 0; object-fit: cover; background: var(--surface-raised); color: var(--text-secondary); border-radius: var(--radius-small); }
+.thread-heading-copy { min-width: 0; flex: 1; }
+.thread-heading-copy h2 { margin: 0; color: var(--text-primary); font-size: var(--text-body); font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.thread-heading-copy h2:focus-visible { outline: 2px solid var(--primary); outline-offset: var(--space-1); }
+.thread-header-meta { margin-top: var(--space-2); flex-wrap: wrap; gap: var(--space-2); }
+.thread-status { padding: 0; background: transparent; }
+.thread-header-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-4); }
+.thread-range { margin: 0; }
+.thread-resolution:empty { display: none; }
+.thread-resolution { margin-top: var(--space-3); }
+.thread-resolution .thread-resolve { position: relative; width: fit-content; }
+.thread-resolution .thread-resolve > div { position: absolute; top: calc(100% + var(--space-1)); left: 0; z-index: 12; width: var(--thread-menu-width); padding: var(--space-1); background: var(--surface-overlay); border: 1px solid var(--edge-neutral); border-radius: var(--radius-small); box-shadow: var(--shadow-overlay); }
+.thread-resolution .thread-resolve > div > button { display: block; width: 100%; text-align: left; padding: var(--space-2); font-size: var(--text-small); border-radius: var(--radius-small); }
+.thread-resolution .thread-resolve > div > button:hover { background: var(--surface-hover); }
+.incident-thread-body { padding: var(--space-5) var(--space-4); scrollbar-color: var(--edge-neutral) transparent; }
+.thread-message { column-gap: var(--space-3); margin-bottom: var(--space-5); }
+.thread-message-avatar { border-radius: var(--radius-small); }
+.thread-message-meta { gap: var(--space-2); line-height: 1.5; }
+.incident-panel .thread-message p { margin-top: var(--space-1); line-height: 1.65; }
+.thread-system-events { margin: var(--space-2) 0 var(--space-5) calc(var(--thread-avatar-size) / 2); padding-left: calc(var(--thread-avatar-size) / 2 + var(--space-3)); }
+.thread-system-event { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); margin-bottom: var(--space-3); }
+.incident-panel .thread-system-event p { margin: 0; line-height: 1.6; }
+.thread-system-event:last-child { margin-bottom: 0; }
+.thread-status-message { text-align: left; flex-wrap: wrap; justify-content: flex-start; gap: var(--space-2); padding: var(--space-2) var(--space-3); margin-block: var(--space-5); border: 0; border-radius: var(--radius-large); background: color-mix(in srgb, var(--status-resolved) 12%, transparent); color: var(--status-resolved); }
+.thread-status-message::before, .thread-status-message::after { content: none; }
+.thread-status-message > span { flex: 1; }
+.thread-context { padding-block: var(--space-3); border-top: 1px solid var(--edge-neutral); margin-top: 0; }
+.thread-context > summary { color: var(--text-secondary); }
+.thread-context > summary:hover { color: var(--text-primary); }
+
+.incident-panel button:focus-visible, .thread-resolve-trigger:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+.thread-message-avatar.system-avatar > img { display: block; width: 100%; height: 100%; object-fit: contain; }
+
+/* Quiet activity sits below authored messages without an extra timeline rail. */
+.thread-system-events { border-left: 0; }
+.incident-panel .system-events-toggle { color: var(--text-tertiary); font-weight: 400; }
+.incident-panel .system-events-toggle:hover { color: var(--text-secondary); background: transparent; }
+.incident-panel .thread-system-event p, .incident-panel .thread-system-event .thread-time { color: var(--text-tertiary); }
+
+/* One active surface slides between the two workspace views. */
+.app-navbar .workspace-view-tabs { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.workspace-view-indicator { position: absolute; inset: 0 auto 0 0; width: 50%; border-radius: var(--radius-small); background: var(--surface-hover); pointer-events: none; transform: translateX(0); transition: transform var(--motion-duration) ease-out; }
+.workspace-view-tabs[data-view="grid"] > .workspace-view-indicator { transform: translateX(100%); }
+.app-navbar .workspace-view-tabs > button, .app-navbar .workspace-view-tabs > button:hover, .app-navbar .workspace-view-tabs > button[aria-selected="true"] { background: transparent; z-index: 1; }
+@media (prefers-reduced-motion: reduce) { .workspace-view-indicator { transition: none; } }
+
+/* All feeds use CameraCard, with the same header and proportional stage. */
+.editor-workspace .camera-layout .camera-card { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.editor-workspace .layout-grid .camera-card { height: 100%; border: 1px solid var(--edge-neutral); border-radius: var(--radius-small); background: var(--surface-base); overflow: visible; }
+.editor-workspace .layout-grid .camera-card > .camera-stage { border-radius: 0 0 var(--radius-small) var(--radius-small); overflow: hidden; }
+.layout-grid .empty-camera-slot { order: 3; }
+.camera-preview-content { display: block; position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; background: transparent; text-align: left; }
+.camera-preview-content > img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.camera-preview-content > .demo-scene { position: absolute; inset: 50% auto auto 50%; transform: translate(-50%, -50%); width: min(100cqw, 160cqh); height: min(100cqh, 62.5cqw); }
+.camera-preview-content:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+/* The current feed stays in the trigger; alternatives unfold from the same surface. */
+.review-camera-header .camera-picker.is-open { z-index: 90; background: var(--surface-overlay); border-radius: var(--radius-small) var(--radius-small) 0 0; box-shadow: none; }
+.review-camera-header .camera-picker.is-open .camera-picker-trigger { background: transparent; border-radius: var(--radius-small) var(--radius-small) 0 0; }
+.review-camera-header .camera-picker-menu { top: 100%; left: 0; width: 100%; border: 0; border-radius: 0 0 var(--radius-small) var(--radius-small); background: var(--surface-overlay); animation: camera-picker-expand var(--motion-duration) ease-out; transform-origin: top; }
+@keyframes camera-picker-expand { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0); } }
+@media (prefers-reduced-motion: reduce) { .review-camera-header .camera-picker-menu { animation: none; } }

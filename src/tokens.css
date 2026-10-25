@@ -1,4 +1,6 @@
 :root {
+  --font-sans: "DM Sans Variable", "DM Sans", sans-serif;
+  --font-mono: "DM Mono", monospace;
   --palette-1: #101010;
   --palette-2: #141414;
   --palette-3: #1b1b1b;

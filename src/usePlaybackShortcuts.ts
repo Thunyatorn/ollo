@@ -35,7 +35,7 @@ export default function usePlaybackShortcuts(options: PlaybackShortcuts) {
         event.preventDefault(); window.dispatchEvent(new Event("ollo:shortcuts"));
         return;
       }
-      if (document.querySelector("details[open]:not(.sidebar-section), [role='dialog'], dialog[open], :popover-open")) return;
+      if (document.querySelector("details[open]:not(.sidebar-section), [role='dialog'], [role='menu'], dialog[open], :popover-open")) return;
       const key = event.key.toLowerCase();
       if (key === " " && target?.closest("button, a, summary, [role='button']")) return;
       const total = Number.isFinite(o.duration) && o.duration > 0 ? o.duration : 120;

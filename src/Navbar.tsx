@@ -41,7 +41,8 @@ export default function Navbar({
           >
             <Brand />
           </button>
-          {onLayout && <nav className="workspace-view-tabs" aria-label="Workspace views" role="tablist">
+          {onLayout && <nav className="workspace-view-tabs" data-view={layout === "grid" ? "grid" : "single"} aria-label="Workspace views" role="tablist">
+            <span className="workspace-view-indicator" aria-hidden="true" />
             {([{ id: "single", label: "Overview", Icon: PanelTop }, { id: "grid", label: "Grid", Icon: Grid2X2 }] as const).map(({id, label, Icon}, index) => {
               const active = id === "grid" ? layout === "grid" : layout !== "grid";
               return <button key={id} role="tab" aria-selected={active} tabIndex={active ? 0 : -1} onClick={() => onLayout(id)} onKeyDown={event => {

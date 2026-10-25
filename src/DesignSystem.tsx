@@ -222,7 +222,7 @@ export default function DesignSystem() {
             </div>
             <div>
               <strong>Aa</strong>
-              <span>System sans serif</span>
+              <span>DM Sans + DM Mono</span>
             </div>
             <div>
               <strong>02</strong>
@@ -257,7 +257,7 @@ export default function DesignSystem() {
         </Section>
         <Section
           name="Typography"
-          description="Inter when available, with native system fallbacks. Compact, readable, and restrained."
+          description="DM Sans for interface text; DM Mono for timestamps, technical labels, and code. Both are bundled locally and controlled by shared font variables."
         >
           <div className="ds-panel">
             {[

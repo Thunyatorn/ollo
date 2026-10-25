@@ -59,7 +59,7 @@
 .editor-waveform path { stroke: var(--text-secondary); }
 .editor-waveform .waveform-center { stroke: var(--edge-neutral); }
 .editor-no-audio { font-size: var(--text-small); color: var(--text-secondary); }
-.editor-ruler, .ruler-label { color: var(--text-secondary); font-size: var(--text-small); font-family: inherit; font-variant-numeric: tabular-nums; }
+.editor-ruler, .ruler-label { color: var(--text-secondary); font-size: var(--text-small); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .editor-incident { --incident-color: var(--primary); }
 
 
@@ -222,7 +222,7 @@
 .trace-thread-description { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); font-size: var(--text-small); line-height: 1.5; }
 .event-trace .trace-time-button { background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--time-tag-ink); border: 0; border-radius: var(--radius-small); opacity: 1; transition: background-color var(--motion-duration) ease-out; }
 .event-trace .trace-time-button:hover, .event-trace .trace-time-button:focus-visible { color: var(--time-tag-ink); background: color-mix(in srgb, var(--primary) 30%, transparent); opacity: 1; }
-.event-trace .trace-tool-badge { height: auto; min-height: var(--space-6); padding: var(--space-1) var(--space-2); background: var(--surface-raised); color: var(--text-secondary); border: 0; border-radius: var(--radius-small); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--text-small); line-height: 1.4; }
+.event-trace .trace-tool-badge { height: auto; min-height: var(--space-6); padding: var(--space-1) var(--space-2); background: var(--surface-raised); color: var(--text-secondary); border: 0; border-radius: var(--radius-small); font-family: var(--font-mono); font-size: var(--text-small); line-height: 1.4; }
 .event-trace .trace-activity-step > div > .trace-tool-badge { background: var(--surface-raised); }
 .event-trace .trace-activity-step { grid-template-columns: 48px minmax(0, 1fr); gap: var(--space-3); }
 .event-export > button { min-height: var(--space-8); padding: var(--space-2) var(--space-3); background: var(--surface-raised); color: var(--text-primary); border: 0; border-radius: var(--radius-small); transition: background-color var(--motion-duration) ease-out; }

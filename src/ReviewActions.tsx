@@ -33,7 +33,7 @@ export default function ReviewActions({ cameraId, userId, duration, keptUntil, a
         <div><dt>Kept until</dt><dd>{keptUntil ? new Date(keptUntil).toLocaleDateString() : "Not supplied"}</dd></div>
         <div><dt>Redaction</dt><dd><label className="clip-redaction"><input type="checkbox" checked={blurRequested} onChange={event => setBlurRequested(event.target.checked)} />Blur others</label></dd></div>
         <div><dt></dt><dd>Preview only · not applied</dd></div>
-        <div><dt>Activity</dt><dd><button className="clip-activity-toggle" aria-expanded={activityOpen} onClick={() => { recordAudit({ action: "view_activity", userId, cameraId, range: { start: 0, end: duration } }); setActivityOpen(!activityOpen); }}>{activityOpen ? "Hide session" : "View session"}</button></dd></div>
+        <div><dt>Activity</dt><dd><button className="clip-activity-toggle" aria-expanded={activityOpen} onClick={() => { recordAudit({ action: "view_activity", userId, cameraId, at: new Date().toISOString(), range: { start: 0, end: duration } }); setActivityOpen(!activityOpen); }}>{activityOpen ? "Hide session" : "View session"}</button></dd></div>
       </dl>
       {activityOpen && <div className="clip-activity"><p>This session only</p>{reviewActivity(cameraId).map((entry, i) => <div key={i}><span>{entry.userId}</span><span>{entry.action.replaceAll("_", " ")} · {new Date(entry.at).toLocaleTimeString()}</span></div>)}</div>}
 
