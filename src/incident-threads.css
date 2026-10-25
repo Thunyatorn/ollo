@@ -1,0 +1,13 @@
+/* Phase A: video receives remaining space after the complete player/timeline. */
+.editor-workspace .monitor-column {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) minmax(var(--review-player-min-height), auto);
+}
+.editor-workspace .monitor-column > .camera-layout { min-height: 0; height: auto; }
+.monitor-column > .playback { min-height: var(--review-player-min-height); }
+.playback-top > .camera-floating-actions {
+  position: static; display: flex; padding: 0; margin-left: auto;
+  border: 0; background: transparent; box-shadow: none;
+}
+.playback-top > .camera-floating-actions .icon-button { color: var(--text-secondary); }
+.playback-top > .camera-floating-actions .icon-button:hover { background: var(--surface-hover); color: var(--text-primary); }

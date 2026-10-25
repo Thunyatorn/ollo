@@ -1661,10 +1661,7 @@ export default function App() {
                         <div className="camera-shade" />
                       </>
                     )}
-                    <div className="camera-floating-actions" aria-label="Camera controls">
-                      <button className={`icon-button ${zones ? "enabled" : ""}`} aria-label="Toggle zone overlay" aria-pressed={zones} title="Toggle zone overlay" onClick={() => setZones(!zones)}><Focus size={14} /></button>
-                      <button className="icon-button" aria-label="Fullscreen camera" title="Fullscreen" onClick={() => stage.current?.requestFullscreen?.()}><Maximize2 size={14} /></button>
-                    </div>
+
                     {room !== 2 && <FullscreenControls live={isLiveFeed} stage={stage} position={position} duration={duration} playing={playing} muted={muted || state.session.audio_permitted !== true} onToggle={() => { void togglePlay(); }} onMute={() => setMuted(m => !m)} onSeek={seekPlayback} />}
                   </div>
 
@@ -1701,6 +1698,10 @@ export default function App() {
                         {isLiveFeed ? <PlaybackLiveLabel /> : <time className="playback-clock" aria-label="Current playback time">{clockTime(recordingStartedAt, position, true)}</time>}
                         {!isLiveFeed && <span className="speed">1×</span>}
                       </div>
+                    <div className="camera-floating-actions" aria-label="Camera controls">
+                      <button className={`icon-button ${zones ? "enabled" : ""}`} aria-label="Toggle zone overlay" aria-pressed={zones} title="Toggle zone overlay" onClick={() => setZones(!zones)}><Focus size={14} /></button>
+                      <button className="icon-button" aria-label="Fullscreen camera" title="Fullscreen" onClick={() => stage.current?.requestFullscreen?.()}><Maximize2 size={14} /></button>
+                    </div>
                     <ReviewActions cameraId={rooms[room].id} userId={form.primary_name} duration={duration} keptUntil={state.session.kept_until} audioPresent={!!audioPeaks} audioPermitted={state.session.audio_permitted === true} />
 
                     </div>

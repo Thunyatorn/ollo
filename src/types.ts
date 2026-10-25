@@ -1,3 +1,20 @@
+export type ResolutionOutcome = "false_alarm" | "handled" | "escalated";
+export type IncidentResolution = { outcome: ResolutionOutcome; by: string; at: string };
+type MessageBase = { id: string; at: string; text: string; anchorSeconds?: number };
+export type IncidentMessage =
+  | (MessageBase & { kind: "detection"; confidence?: number })
+  | (MessageBase & { kind: "system" })
+  | (MessageBase & { kind: "note"; authorId: string; authorName: string; anchorAt?: string })
+  | (MessageBase & { kind: "status"; authorId: string });
+export type IncidentThreadChanges = { messages: IncidentMessage[]; resolution?: IncidentResolution; lastReadAt?: string };
+export type IncidentThread = {
+  id: string; title: string; cameraId: string; cameraName: string;
+  startedAt: string; endedAt?: string; startSeconds?: number; endSeconds?: number;
+  status: "open" | "in_review" | "resolved"; resolution?: IncidentResolution;
+  thumbnailUrl?: string; messages: IncidentMessage[]; lastReadAt?: string;
+  source: Incident;
+};
+
 export interface Incident {
   id: string;
   kind: string;
@@ -21,6 +38,10 @@ export interface Incident {
   limitations?: string[];
   clip_url?: string;
   evidence_url?: string;
+  confidence?: number;
+  resolution?: IncidentResolution;
+  messages?: IncidentMessage[];
+  lastReadAt?: string;
   demo_response?: { time_ms: number; description: string; tool?: string }[];
   second_opinion?: {
     assessment:

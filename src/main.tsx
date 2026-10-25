@@ -5,6 +5,7 @@ import DesignSystem from "./DesignSystem";
 import "./styles.css";
 import "./tokens.css";
 import "./review.css";
+import "./incident-threads.css";
 const Agentation = import.meta.env.DEV
   ? lazy(() => import("agentation").then(module => ({ default: module.Agentation })))
   : null;

@@ -428,3 +428,13 @@
 :root { --radius-compact: 2px; }
 
 :root { --text-ruler-size: 11px; --time-tag-ink: #68b7c1; }
+
+:root {
+  --review-player-min-height: 164px;
+  --thread-thumbnail-width: 48px;
+  --thread-thumbnail-height: 36px;
+  --thread-avatar-size: 36px;
+  --thread-open-edge: 3px;
+  --thread-motion-duration: 150ms;
+  --thread-panel-min-height: 240px;
+}
