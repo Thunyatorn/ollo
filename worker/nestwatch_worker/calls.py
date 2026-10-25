@@ -226,6 +226,87 @@ class TwilioCalls:
             log.warning("could not hang up %s: %s", call_id, e)
 
 
+class SimulatedTexts:
+    """Nothing is sent; the text is logged and kept for tests."""
+    def __init__(self):
+        self.sent: list[tuple[str, str, bool]] = []     # (phone_last4, body, had_image)
+
+    async def send(self, phone: str, body: str, image: bytes | None = None) -> None:
+        self.sent.append((phone[-4:], body, image is not None))
+        log.info("SIMULATED text to ...%s: %s%s", phone[-4:], body, " (+image)" if image else "")
+
+
+class TwilioTexts:
+    """The same alert as a text message with the blurred key frame attached (MMS). Twilio fetches the image from
+    /media/<token>, a one-time address that expires after 15 minutes."""
+
+    def __init__(self, s, http: httpx.AsyncClient | None = None):
+        self.s = s
+        self.http = http or httpx.AsyncClient(timeout=15.0)
+        self.media: dict[str, tuple[float, bytes]] = {}
+
+    def media_for(self, token: str) -> bytes | None:
+        now = time.time()
+        for k in [k for k, (exp, _) in self.media.items() if exp < now]:
+            del self.media[k]
+        item = self.media.get(token)
+        return item[1] if item else None
+
+    async def send(self, phone: str, body: str, image: bytes | None = None) -> None:
+        if not E164.match(phone):
+            raise ValueError("the backup's phone number is not in +E.164 form")
+        form = {"To": phone, "From": self.s.twilio_from, "Body": body}
+        url = f"https://api.twilio.com/2010-04-01/Accounts/{self.s.twilio_sid}/Messages.json"
+        auth = (self.s.twilio_sid, self.s.twilio_token)
+        link = None
+        if image:
+            token = secrets.token_urlsafe(24)
+            self.media[token] = (time.time() + 900, image)
+            link = f"{self.s.public_base_url}/media/{token}"
+            form["MediaUrl"] = link
+        r = await self.http.post(url, data=form, auth=auth)
+        if r.status_code == 400 and link:      # trial accounts refuse attachments: send the image as a link instead
+            del form["MediaUrl"]
+            form["Body"] = f"{body} Photo: {link}"
+            r = await self.http.post(url, data=form, auth=auth)
+        if r.status_code >= 400:
+            raise RuntimeError(f"twilio refused the text: {_why(r)}")
+
+
+class TelegramTexts:
+    """The alert as a Telegram message with the key frame as a photo. Free, no registration, but it lands in the Telegram
+    app, not the phone's SMS. shortcut: one demo audience (TELEGRAM_CHAT_ID, comma-separated, or whoever pressed Start on
+    the bot), not one chat per caregiver; the phone number is ignored. Upgrade when each caregiver needs their own chat."""
+
+    def __init__(self, s, http: httpx.AsyncClient | None = None):
+        self.s = s
+        self.http = http or httpx.AsyncClient(timeout=15.0)
+        self._chats: list[str] = [c.strip() for c in s.telegram_chat_id.split(",") if c.strip()]
+
+    async def _api(self, method: str, **kw) -> dict:
+        r = await self.http.post(f"https://api.telegram.org/bot{self.s.telegram_token}/{method}", **kw)
+        if r.status_code >= 400:
+            raise RuntimeError(f"telegram refused {method}: {_why(r)}")
+        return r.json()
+
+    async def chats(self) -> list[str]:
+        """The configured chats, else everyone who pressed Start on the bot."""
+        if not self._chats:
+            updates = (await self._api("getUpdates")).get("result", [])
+            self._chats = sorted({str(u["message"]["chat"]["id"]) for u in updates if u.get("message")})
+        return self._chats
+
+    async def send(self, phone: str, body: str, image: bytes | None = None) -> None:
+        chats = await self.chats()
+        if not chats:
+            raise RuntimeError("nobody has pressed Start on the Telegram bot yet")
+        for chat in chats:
+            if image:
+                await self._api("sendPhoto", data={"chat_id": chat, "caption": body[:1000]}, files={"photo": ("frame.jpg", image, "image/jpeg")})
+            else:
+                await self._api("sendMessage", data={"chat_id": chat, "text": body})
+
+
 AGENT_CALLS_URL = "https://api.cartesia.ai/agents/calls"
 
 

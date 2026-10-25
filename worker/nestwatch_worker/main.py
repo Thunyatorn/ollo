@@ -6,7 +6,7 @@ import uvicorn
 
 from .ai import Claude
 from .app import create_app
-from .calls import AgentCalls, FallbackCalls, SimulatedCalls, TwilioCalls
+from .calls import AgentCalls, FallbackCalls, SimulatedCalls, SimulatedTexts, TelegramTexts, TwilioCalls, TwilioTexts
 from .config import Settings
 from .jobs import Worker
 from .spacetime import Spacetime
@@ -32,7 +32,8 @@ def build(s: Settings):
     if s.calls_enabled and isinstance(calls, SimulatedCalls):
         log.warning("CALLS_ENABLED is set but Twilio/Cartesia settings are incomplete: calls stay SIMULATED")
     keyframes = KeyframeStore(s.keyframe_ttl_s)
-    worker = Worker(stdb, s, claude, calls, keyframes)
+    texts = TelegramTexts(s) if s.telegram_token else TwilioTexts(s) if s.twilio_ready() else SimulatedTexts()
+    worker = Worker(stdb, s, claude, calls, keyframes, texts=texts)
     return create_app(worker, TokenChecker(stdb), keyframes, s), worker
 
 
