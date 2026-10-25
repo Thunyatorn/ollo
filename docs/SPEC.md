@@ -276,6 +276,16 @@ Development is spec-first. Every behavior has a requirement with a stable ID, te
   - **Prepared on arming.** Arming real calls checks the Twilio account type and prepares the speech for every alert kind in the current room, in the background.
 - **Verify:** `test_call_speed.py::test_call_is_created_before_speech_is_ready`, `test_call_speed.py::test_answered_call_waits_for_speech_or_falls_back_to_say`, `test_call_speed.py::test_arming_prepares_speech_for_every_kind_once`
 
+#### ESC-6 · Telegram alert beside the call
+- **Status:** Done
+- **Why:** a caregiver can miss a call; a Telegram message is free and stays on the phone until read.
+- **Acceptance:**
+  - **Not gated by arming.** A message is sent at each escalation step of an open incident, beside the call and never delaying it, whether or not real calls are armed (ESC-1 gates calls, which ring other people; the chat ids here are the operator's own configuration). While calls are not armed the text says "(simulation, no call placed)".
+  - **Configuration.** `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` (comma-separated chat ids). Without both nothing is sent. Chat ids are explicit: the server never calls `getUpdates`, which would fight another consumer of the same bot.
+  - **Content.** Room, what was observed, and the escalation step, with the incident's head-blurred key frame (`evidence_url`) as a photo when one exists; fixtures have none and send text only. No phone number, no unblurred image.
+  - **Failure.** A chat that cannot be reached is counted, never raised, and never puts the bot token in an error. A photo Telegram refuses or fails to upload falls back to the text, so the alert still arrives. The incident timeline records `telegram_sent` or `telegram_failed` with the counts. A Telegram failure does not affect the call.
+- **Verify:** `test_telegram.py::test_not_configured_sends_nothing`, `test_telegram.py::test_sends_to_each_chat_and_counts_failures_without_raising`, `test_telegram.py::test_photo_goes_as_one_sendphoto_with_the_caption`, `test_telegram.py::test_photo_that_is_refused_or_errors_still_sends_the_text`, `test_telegram.py::test_alert_text_names_room_event_and_step`
+
 #### ESC-3 · Spoken acknowledgment through a Cartesia voice agent
 - **Status:** Done
 - **Acceptance:**
@@ -414,7 +424,7 @@ Development is spec-first. Every behavior has a requirement with a stable ID, te
   - The page title and brand read ollo, and no visible text says Lookout.
   - Each tracked person is drawn as a keypoint skeleton (COCO limb pairs, confident keypoints only) under their box, labeled with their track ID.
   - Fixture, illustration and simulated states stay visibly labeled.
-  - The restricted zone is drawn on the video only while it is enabled; a disabled zone draws nothing (found 2026-10-25: the dashed box stayed after the zone was switched off).
+  - The restricted zone is detected but not drawn on the video: the dashed zone rectangle was removed from the camera view on 2026-10-25.
   - Found after the 2026-10-24 UI update: the skeleton vanished because overlays were shown only for role IDs (`primary`, …) while the server labels roles "Primary caregiver". Staff roles are matched by their first word, so either form shows overlays.
 - **Verify:** `scripts/design-smoke.mjs`, `scripts/skeleton-smoke.mjs`
 
