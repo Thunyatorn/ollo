@@ -14,7 +14,7 @@
 6. **Keeps the record.** Each incident has a timeline: detected, messaged, called, acknowledged, resolved.
 
 ![How ollo works](docs/images/how-ollo-works.png)
-
+Diagram made with Mana.space
 ## Why it matters
 
 In one study of people over 90 who fell, 30% stayed on the floor for an hour or more ([BMJ 2008](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2590903/)). ollo cuts that wait to seconds, and her record reaches the hospital before she does.
