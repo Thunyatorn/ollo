@@ -176,13 +176,12 @@ export default function App() {
   const audioFile = useRef<File | null>(null);
   const [audioPeaks, setAudioPeaks] = useState<number[] | null>(null);
   const [removedCameras, setRemovedCameras] = useState<number[]>([]);
-  const [mainCamera, setMainCamera] = useState(() => { try { const saved = Number(localStorage.getItem("ollo-main-camera")); return Number.isInteger(saved) && saved >= 0 && saved < rooms.length ? saved : 0; } catch { return 0; } });
   const [cameraLayout, setCameraLayout] = useState<CameraLayout>("single");
   const [reviewDate, setReviewDate] = useState<string | null>(null);
   const [state, setState] = useState<LookoutState>(initialState),
     [connected, setConnected] = useState(false),
     [page, setPage] = useState(() => { const requested = new URLSearchParams(window.location.search).get("page"); return requested === "history" || requested === "settings" ? requested : "monitor"; }),
-    [room, setRoom] = useState(mainCamera),
+    [room, setRoom] = useState(0),
     [playing, setPlaying] = useState(true),
     [zones, setZones] = useState(true),
     [source, setSource] = useState(""),
@@ -1663,7 +1662,12 @@ export default function App() {
                 <MonitoringControls date={reviewDate} onDate={setReviewDate} layout={cameraLayout} onLayout={setCameraLayout} eventDates={new Set((room !== 0 || sourceType === "illustration" ? mockIncidents : state.incidents).map(i => incidentDate(i.opened_at)))} />
                 </details>
                 <details className="sidebar-section" open><summary>Cameras</summary>
-                  <CameraSidebar rooms={rooms} selected={room} main={mainCamera} removed={removedCameras} onRemove={index => { const remaining = rooms.map((_, i) => i).filter(i => i !== index && !removedCameras.includes(i)); if (!remaining.length) return; setRemovedCameras(previous => [...previous, index]); if (room === index) setRoom(remaining.includes(mainCamera) ? mainCamera : remaining[0]); if (mainCamera === index) { setMainCamera(remaining[0]); try { localStorage.setItem("ollo-main-camera", String(remaining[0])); } catch { /* Storage is optional. */ } } }} onSelect={setRoom} onMain={index => { setMainCamera(index); setRoom(index); try { localStorage.setItem("ollo-main-camera", String(index)); } catch { /* Keep selection available without storage. */ } }} />
+                  <CameraSidebar rooms={rooms} selected={room} removed={removedCameras} onSelect={setRoom} onRemove={index => {
+                    const remaining = rooms.map((_, i) => i).filter(i => i !== index && !removedCameras.includes(i));
+                    if (!remaining.length) return;
+                    setRemovedCameras(previous => [...previous, index]);
+                    if (room === index) setRoom(remaining[0]);
+                  }} />
                 </details>
                 <details className="sidebar-section sidebar-events" open><summary>Event trace<span>{traceState.incidents.length.toString().padStart(2, "0")}</span></summary>
               <EventTrace

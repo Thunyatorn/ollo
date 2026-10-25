@@ -1,6 +1,8 @@
+import TraceBadge from "./TraceBadge";
 import {
   TriangleAlert,
   Check,
+  Clock3,
   CheckCheck,
   Phone,
   ScanLine,
@@ -65,22 +67,20 @@ export default function EventTrace({
                 <div className="trace-summary">
                   <div>
                     <span className="trace-meta">
-                      <span className="incident-badge"><TriangleAlert size={11} />Incident</span>
+                      <TraceBadge className="incident-badge"><TriangleAlert size={11} />Incident</TraceBadge>
+                      <TraceBadge className={`trace-status ${incident.status === "resolved" ? "resolved" : "pending"}`}>
+                        {incident.status === "resolved" ? <Check size={11} /> : <Clock3 size={11} />}
+                        {incident.status === "resolved" ? "Resolved" : "Pending"}
+                      </TraceBadge>
                       <span className="trace-time-tags">
                       {incident.media_time_ms === undefined ? <span>EVENT</span> : <>
-                        <button className="trace-seek-tag" onClick={() => onSeek(incident.media_time_ms! / 1000)} aria-label={`Seek to start ${clock(incident.media_time_ms)}`}>{clock(incident.media_time_ms)}</button>
-                        {incident.media_end_time_ms !== undefined && <button className="trace-seek-tag" onClick={() => onSeek(incident.media_end_time_ms! / 1000)} aria-label={`Seek to end ${clock(incident.media_end_time_ms)}`}>{clock(incident.media_end_time_ms)}</button>}
+                        <TraceBadge className="trace-seek-tag" onClick={() => onSeek(incident.media_time_ms! / 1000)} aria-label={`Seek to start ${clock(incident.media_time_ms)}`}>{clock(incident.media_time_ms)}</TraceBadge>
+                        {incident.media_end_time_ms !== undefined && <TraceBadge className="trace-seek-tag" onClick={() => onSeek(incident.media_end_time_ms! / 1000)} aria-label={`Seek to end ${clock(incident.media_end_time_ms)}`}>{clock(incident.media_end_time_ms)}</TraceBadge>}
                       </>}
                       </span>
                       {incident.origin !== "fixture" && <span>{incident.priority.toUpperCase()}</span>}
                     </span>
-                    <div className="trace-title-row"><h3>{incident.title}</h3>                    <span className={`trace-status ${incident.status}`}>
-                      {incident.status === "resolved" && <Check size={11} />}
-                      {incident.status === "open"
-                        ? "Needs review"
-                        : incident.status}
-                    </span>
-</div>
+                    <div className="trace-title-row"><h3>{incident.title}</h3></div>
                     {incident.assigned_responder &&
                       (incident.status === "acknowledged" ||
                         incident.status === "resolved") && (
@@ -97,11 +97,11 @@ export default function EventTrace({
                     {incident.observations.map((observation, index) => <p key={index}>{observation}</p>)}
                     <div className="trace-response-log">
                       {incident.demo_response ? incident.demo_response.map((step, index) => <div className="trace-activity-step" key={index}>
-                        <button className="trace-time-button" onClick={() => onSeek(step.time_ms / 1000)} aria-label={`Seek to ${clock(step.time_ms)}`}>{clock(step.time_ms)}</button>
-                        <div>{step.tool && <span className="trace-tool-badge">{step.tool === "Phone call" && <Phone size={10} />}{step.tool}</span>}<p>{step.description}</p></div>
+                        <TraceBadge className="trace-time-button" onClick={() => onSeek(step.time_ms / 1000)} aria-label={`Seek to ${clock(step.time_ms)}`}>{clock(step.time_ms)}</TraceBadge>
+                        <div>{step.tool && <TraceBadge className="trace-tool-badge">{step.tool === "Phone call" && <Phone size={10} />}{step.tool}</TraceBadge>}<p>{step.description}</p></div>
                       </div>) : <>
-                        {incident.media_time_ms !== undefined && <div className="trace-timepoints"><button className="trace-time-button" onClick={() => onSeek(incident.media_time_ms! / 1000)}>{clock(incident.media_time_ms)}</button>{incident.media_end_time_ms !== undefined && <button className="trace-time-button" onClick={() => onSeek(incident.media_end_time_ms! / 1000)}>{clock(incident.media_end_time_ms)}</button>}</div>}
-                        {attempts.map(attempt => <p key={attempt.id}><span className="trace-tool-badge"><Phone size={10} />{attempt.payload?.provider === "cartesia_agent" ? "Agent phone call" : "Phone call"}</span> {state.caregivers[attempt.step]?.name || "Caregiver"} · {attempt.status.replaceAll("_", " ")}{attempt.payload?.mode === "simulation" ? " (simulated)" : ""}</p>)}
+                        {incident.media_time_ms !== undefined && <div className="trace-timepoints"><TraceBadge className="trace-time-button" onClick={() => onSeek(incident.media_time_ms! / 1000)}>{clock(incident.media_time_ms)}</TraceBadge>{incident.media_end_time_ms !== undefined && <TraceBadge className="trace-time-button" onClick={() => onSeek(incident.media_end_time_ms! / 1000)}>{clock(incident.media_end_time_ms)}</TraceBadge>}</div>}
+                        {attempts.map(attempt => <p key={attempt.id}><TraceBadge className="trace-tool-badge"><Phone size={10} />{attempt.payload?.provider === "cartesia_agent" ? "Agent phone call" : "Phone call"}</TraceBadge> {state.caregivers[attempt.step]?.name || "Caregiver"} · {attempt.status.replaceAll("_", " ")}{attempt.payload?.mode === "simulation" ? " (simulated)" : ""}</p>)}
                         {incident.assigned_responder && <p>{incident.assigned_responder}{incident.acknowledged_via ? ` · ${incident.acknowledged_via} response` : " · assigned responder"}</p>}
                         <p>{incident.status === "resolved" ? "Incident resolved after review." : incident.status === "acknowledged" ? "Caregiver is responding." : incident.status === "dismissed" ? "Dismissed after review." : "Awaiting caregiver response."}</p>
                       </>}
