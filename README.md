@@ -14,7 +14,7 @@
 5. **Helps the family act.** Two taps call an ambulance. One tap emails her medical record, the fall clip and the timeline to her usual hospital, or the nearest ER.
 6. **Keeps the record.** Each incident has a timeline: detected, messaged, called, acknowledged, resolved.
 
-![How ollo works](docs/images/how-ollo-works.png)
+![How ollo works](docs/images/whiteboard.svg)
 
 Diagram made with Mana.space
 ## Why it matters
