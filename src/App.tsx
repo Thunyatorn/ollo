@@ -1,5 +1,7 @@
+import { adaptIncidentThread, addIncidentNote, resolveIncidentThread } from "./incidentThreads";
+import { recordAudit } from "./reviewAudit";
+import type { IncidentThreadChanges } from "./types";
 import ReviewActions from "./ReviewActions";
-import { clockTime } from "./timecode";
 import Navbar from "./Navbar";
 import Brand from "./Brand";
 import { useEffect, useRef, useState } from "react";
@@ -40,7 +42,7 @@ import EventTrace from "./EventTrace";
 import ResizableWorkspace from "./ResizableWorkspace";
 import LiveCameraPlaceholder from "./LiveCameraPlaceholder";
 import CameraSidebar from "./CameraSidebar";
-import { PlaybackLiveLabel } from "./PlaybackTime";
+import PlaybackTime from "./PlaybackTime";
 import { demoIncidents } from "./demoIncidents";
 import FullscreenControls from "./FullscreenControls";
 import usePlaybackShortcuts from "./usePlaybackShortcuts";
@@ -144,7 +146,6 @@ function DemoScene({ room, zones, position }: { room: number; zones: boolean; po
   return (
     <div className="demo-scene">
       <img src={camera.image} alt={camera.alt} />
-      {position !== undefined && <div className="camera-clock footage-clock"><span>{camera.id} · EAST WING</span><strong>{clockTime(new Date(new Date().setHours(9, 0, 0, 0)).toISOString(), position)}</strong></div>}
       {zones && (
         <div className="demo-tracks" aria-label="Illustrative tracking boxes">
           {camera.tracks.map((t, i) => (
@@ -153,7 +154,7 @@ function DemoScene({ room, zones, position }: { room: number; zones: boolean; po
               key={i}
               style={{ left: `${t.x}%`, top: `${t.y}%`, width: `${t.w}%`, height: `${t.h}%` }}
             >
-              <span>PERSON {String(i + 1).padStart(2, "0")}</span>
+              <span>{String(i + 1).padStart(2, "0")}</span>
             </div>
           ))}
         </div>
@@ -264,18 +265,34 @@ export default function App() {
     ...mockIncidents.filter(i => !reviewDate || incidentDate(i.opened_at) === reviewDate),
   ].sort((a, b) => (a.media_time_ms ?? 0) - (b.media_time_ms ?? 0));
   const traceState = { ...datedState, incidents: cameraIncidents };
-  const timelineMarkers = cameraIncidents.filter(i => i.media_time_ms !== undefined).map(i => ({ id: i.id, time: i.media_time_ms! / 1000, endTime: i.media_end_time_ms !== undefined ? i.media_end_time_ms / 1000 : i.resolved_at ? i.media_time_ms! / 1000 + Math.max(0, (new Date(i.resolved_at).getTime() - new Date(typeof i.opened_at === "number" ? i.opened_at * 1000 : i.opened_at).getTime()) / 1000) : undefined, title: i.title, status: i.status, demo: !!i.demo_response }));
-  const playheadIncidentId = timelineMarkers.find(marker =>
-    marker.endTime !== undefined && position >= marker.time && position <= marker.endTime
-  )?.id;
   const [explicitIncident, setExplicitIncident] = useState<string | null>(null);
   const [hoveredIncident, setHoveredIncident] = useState<string | null>(null);
-  const selectedIncident = cameraIncidents.some(i => i.id === explicitIncident) ? explicitIncident : playheadIncidentId || null;
+  const [openedThreadId, setOpenedThreadId] = useState<string | null>(null);
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
+  const [threadChanges, setThreadChanges] = useState<Record<string, IncidentThreadChanges>>({});
   const recordingStartedAt = sourceType === "illustration" || room === 1 ? new Date(new Date().setHours(9, 0, 0, 0)).toISOString() : isLiveFeed ? liveRecordingStart ?? undefined : state.session.recording_started_at;
+  const incidentThreads = cameraIncidents.map(incident => adaptIncidentThread(incident, {
+    cameraId: rooms[room].id, cameraName: rooms[room].name, recordingStartedAt,
+    thumbnailUrl: sourceType === "illustration" || room === 1 ? rooms[room].image : serverFrame || undefined,
+    attempts: state.attempts, changes: threadChanges[incident.id],
+  }));
+  const timelineMarkers = incidentThreads.filter(thread => thread.startSeconds !== undefined).map(thread => ({
+    id: thread.id, time: thread.startSeconds!, endTime: thread.endSeconds, title: thread.title, status: thread.status,
+    demo: thread.source.origin === "fixture", notes: thread.messages.filter(message => message.kind === "note" && message.anchorSeconds !== undefined).map(message => ({ id: message.id, time: message.anchorSeconds!, title: message.text })),
+  }));
+  const playheadIncidentId = timelineMarkers.find(marker => marker.endTime !== undefined && position >= marker.time && position <= marker.endTime)?.id;
+  const selectedIncident = cameraIncidents.some(i => i.id === explicitIncident) ? explicitIncident : playheadIncidentId || null;
+  function openIncidentThread(id: string, noteId?: string) {
+    const at = new Date().toISOString();
+    setExplicitIncident(id); setOpenedThreadId(id); setSelectedNoteId(noteId ?? null);
+    setThreadChanges(current => ({ ...current, [id]: { ...current[id], messages: current[id]?.messages ?? [], lastReadAt: at } }));
+    recordAudit({ action: "open_thread", userId: form.primary_name, cameraId: rooms[room].id, incidentId: id, at });
+  }
   const active = state.incidents.find(
     (i) => i.status === "open" || i.status === "acknowledged",
   );
-  const visibleOverlays = (state.overlays || []).filter(
+  const canUseStaffUI = ["primary", "backup", "staff", "admin", "local_operator"].includes(state.caregivers[0]?.role ?? "local_operator");
+  const visibleOverlays = (zones && canUseStaffUI ? state.overlays || [] : []).filter(
     (o) =>
       o.epoch === state.session.epoch &&
       Math.abs(o.media_time_ms - position * 1000) < 500,
@@ -1048,6 +1065,13 @@ export default function App() {
               <div className="monitor-column">
                 <div className={`camera-layout layout-${cameraLayout}`}>
                 <div className="camera-card">
+                  <div className="review-camera-header">
+                    <span className={`camera-state-dot ${room === 2 ? "offline" : "recorded"}`} aria-hidden="true" />
+                    <select aria-label="Select camera" value={room} onChange={event => { setRoom(Number(event.target.value)); setOpenedThreadId(null); setSelectedNoteId(null); }}>
+                      {rooms.map((camera, index) => !removedCameras.includes(index) && <option key={camera.id} value={index}>{camera.name} · {camera.id}</option>)}
+                    </select>
+                    <span>{room === 2 ? "Offline" : room !== 0 || sourceType === "illustration" ? "Illustrative" : isLiveFeed ? "Live" : "Recorded"}</span>
+                  </div>
                   <div
                     className={`camera-stage ${state.camera.health === "offline" ? "offline" : ""}`}
                     ref={stage}
@@ -1107,7 +1131,7 @@ export default function App() {
                             </div>
                           )
                         ) : (
-                          <DemoScene room={room} zones={zones} position={position} />
+                          <DemoScene room={room} zones={zones && canUseStaffUI} position={position} />
                         )}
                         <div className="camera-shade" />
                         <div className="on-video-top">
@@ -1135,10 +1159,7 @@ export default function App() {
                               </span>
                             </div>
                           )}
-                          {sourceType !== "illustration" && <div className="camera-clock">
-                            <span>CAM 01 · EAST WING</span>
-                            <strong>{clockTime(recordingStartedAt, position, true)}</strong>
-                          </div>}
+
                         </div>
                         {sourceType !== "illustration" && (
                           <div
@@ -1657,7 +1678,7 @@ export default function App() {
                       </>
                     ) : (
                       <>
-                        <DemoScene room={room} zones={zones} position={position} />
+                        <DemoScene room={room} zones={zones && canUseStaffUI} position={position} />
                         <div className="camera-shade" />
                       </>
                     )}
@@ -1669,7 +1690,7 @@ export default function App() {
                 {cameraLayout !== "single" && <div className="additional-cameras">
                   {rooms.map((camera, index) => index !== room && !removedCameras.includes(index) && <button className="camera-preview-card" key={camera.id} onClick={() => { setRoom(index); }} aria-label={`Focus ${camera.name}`}>
                     <div className="preview-card-header"><span><Video size={14} />{camera.name}</span><small>{camera.id}</small></div>
-                    <div className="preview-card-scene">{index === 2 ? <LiveCameraPlaceholder /> : index === 0 && sourceType !== "illustration" ? serverFrame && sourceType === "server" ? <img src={serverFrame} alt="Current server camera preview" /> : <div className="preview-source-placeholder"><Video size={24} /><span>{sourceType === "webcam" ? "Webcam connected" : "Video source connected"}</span><small>Select to view and control</small></div> : <DemoScene room={index} zones={zones} />}</div>
+                    <div className="preview-card-scene">{index === 2 ? <LiveCameraPlaceholder /> : index === 0 && sourceType !== "illustration" ? serverFrame && sourceType === "server" ? <img src={serverFrame} alt="Current server camera preview" /> : <div className="preview-source-placeholder"><Video size={24} /><span>{sourceType === "webcam" ? "Webcam connected" : "Video source connected"}</span><small>Select to view and control</small></div> : <DemoScene room={index} zones={zones && canUseStaffUI} />}</div>
                     <div className="preview-card-footer"><span>{index === 2 ? "Live feed · not connected" : index === 0 && sourceType !== "illustration" ? "Connected source" : "Illustrative demo · not a live feed"}</span><Maximize2 size={12} /></div>
                   </button>)}
                   {cameraLayout === "grid" ? <div className="empty-camera-slot" aria-label="Empty camera slot 4" /> : <button className="add-camera-tile" onClick={() => { setCameraMessage(""); setSourceOpen(true); }}><Plus size={20} /><strong>Connect a camera</strong><span>RTSP or HTTP stream</span><small>One analyzed source at a time</small></button>}
@@ -1695,7 +1716,7 @@ export default function App() {
                             <Play size={16} fill="currentColor" />
                           )}
                         </button>
-                        {isLiveFeed ? <PlaybackLiveLabel /> : <time className="playback-clock" aria-label="Current playback time">{clockTime(recordingStartedAt, position, true)}</time>}
+                        <PlaybackTime position={position} duration={duration} live={isLiveFeed} disabled={room === 2} onSeek={seekPlayback} />
                         {!isLiveFeed && <span className="speed">1×</span>}
                       </div>
                     <div className="camera-floating-actions" aria-label="Camera controls">
@@ -1724,6 +1745,7 @@ export default function App() {
                       markers={timelineMarkers}
                       onSeek={(seconds, marker?: TimelineMarker) => {
                         setExplicitIncident(marker?.id ?? null);
+                        if (marker) openIncidentThread(marker.id, marker.noteId);
                         if (isLiveFeed) return;
                         setPlaying(false);
                         setPosition(seconds);
@@ -1737,11 +1759,28 @@ export default function App() {
               </div>
               <div className="monitor-side-panel">
                 <details className="sidebar-section" open><summary>Date</summary>
-                <MonitoringControls date={reviewDate} onDate={setReviewDate} footageDates={new Set([...(recordingStartedAt ? [dateKey(new Date(recordingStartedAt))] : []), ...mockIncidents.map(i => incidentDate(i.opened_at))])} openIncidentDates={new Set((sourceType === "illustration" ? mockIncidents : state.incidents).filter(i => i.status === "open").map(i => incidentDate(i.opened_at)))} eventDates={new Set((room !== 0 || sourceType === "illustration" ? mockIncidents : state.incidents).map(i => incidentDate(i.opened_at)))} />
+                <MonitoringControls compact date={reviewDate} onDate={setReviewDate} footageDates={new Set([...(recordingStartedAt ? [dateKey(new Date(recordingStartedAt))] : []), ...mockIncidents.map(i => incidentDate(i.opened_at))])} openIncidentDates={new Set((sourceType === "illustration" ? mockIncidents : state.incidents).filter(i => i.status === "open").map(i => incidentDate(i.opened_at)))} eventDates={new Set((room !== 0 || sourceType === "illustration" ? mockIncidents : state.incidents).map(i => incidentDate(i.opened_at)))} />
                 </details>
-                <details className="sidebar-section sidebar-events" open><summary>Event trace<span>{traceState.incidents.length.toString().padStart(2, "0")}</span></summary>
+                <details className="sidebar-section sidebar-events" open><summary>Incidents<span>{traceState.incidents.length.toString().padStart(2, "0")}</span></summary>
               <EventTrace
                 state={traceState}
+                threads={incidentThreads}
+                openedId={openedThreadId}
+                selectedNoteId={selectedNoteId}
+                position={position}
+                canSeek={!isLiveFeed}
+                canAnnotate={canUseStaffUI}
+                onOpen={openIncidentThread}
+                onBack={() => { setOpenedThreadId(null); setSelectedNoteId(null); }}
+                onJump={(seconds) => { if (isLiveFeed) return; setPosition(seconds); setPlaying(true); if (video.current) { video.current.currentTime = seconds; void video.current.play().catch(() => setPlaying(false)); } }}
+                onAddNote={(id, draft) => {
+                  const message = addIncidentNote({ ...draft, incidentId: id, cameraId: rooms[room].id, userId: form.primary_name, authorName: form.primary_name });
+                  setThreadChanges(current => ({ ...current, [id]: { ...current[id], messages: [...(current[id]?.messages ?? []), message], lastReadAt: message.at } }));
+                }}
+                onResolve={(id, outcome) => {
+                  const { resolution, message } = resolveIncidentThread({ incidentId: id, cameraId: rooms[room].id, userId: form.primary_name, outcome });
+                  setThreadChanges(current => ({ ...current, [id]: { ...current[id], messages: [...(current[id]?.messages ?? []), message], resolution, lastReadAt: message.at } }));
+                }}
                 room={room}
                 selected={selectedIncident}
                 recordingStartedAt={recordingStartedAt}

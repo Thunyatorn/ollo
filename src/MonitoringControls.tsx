@@ -5,7 +5,8 @@ import { CalendarDays, ChevronLeft, ChevronRight, Grid2X2, PanelLeft, Square } f
 export type CameraLayout = "single" | "grid" | "focus";
 export const dateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
-export default function MonitoringControls({ date, onDate, eventDates, footageDates = new Set(), openIncidentDates = new Set() }: {
+export default function MonitoringControls({ date, onDate, eventDates, footageDates = new Set(), openIncidentDates = new Set(), compact = false }: {
+  compact?: boolean;
   date: string | null; onDate: (date: string | null) => void;
   layout?: CameraLayout; onLayout?: (layout: CameraLayout) => void; eventDates: Set<string>; footageDates?: Set<string>; openIncidentDates?: Set<string>;
 }) {
@@ -42,7 +43,7 @@ export default function MonitoringControls({ date, onDate, eventDates, footageDa
   return <div className="monitor-controls">
     <div className="monitor-control-actions">
       <details ref={datePicker} onToggle={event => setCalendarOpen(event.currentTarget.open)} className="date-picker" onKeyDown={e => { if (e.key === "Escape") { e.currentTarget.removeAttribute("open"); e.currentTarget.querySelector("summary")?.focus(); } }}>
-        <summary aria-label="Choose date"><span>{new Date(`${date || today}T12:00:00`).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</span><CalendarDays size={15} /></summary>
+        <summary aria-label="Choose date"><span>{new Date(`${date || today}T12:00:00`).toLocaleDateString("en-US", { month: compact ? "short" : "long", day: "numeric", ...(compact ? {} : { year: "numeric" as const }) })}</span><CalendarDays size={15} /></summary>
         {calendarOpen && createPortal(<div ref={calendar} className="calendar-popover calendar-portal" role="dialog" aria-label="Choose date" style={{ top: calendarPosition.top, left: calendarPosition.left }}>
           <div className="calendar-heading"><button aria-label="Previous month" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}><ChevronLeft size={16} /></button><strong aria-live="polite">{month.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</strong><button aria-label="Next month" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}><ChevronRight size={16} /></button></div>
           <div className="calendar-days">

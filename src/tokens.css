@@ -438,3 +438,4 @@
   --thread-motion-duration: 150ms;
   --thread-panel-min-height: 240px;
 }
+:root { --thread-composer-max-height: 128px; --thread-menu-width: 176px; }

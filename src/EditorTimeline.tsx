@@ -2,9 +2,9 @@ import AudioWaveform from "./AudioWaveform";
 import { clockTime } from "./timecode";
 import TimelineOverview from "./TimelineOverview";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { Video } from "lucide-react";
+import { Pin, Video } from "lucide-react";
 
-export type TimelineMarker = { id: string; time: number; endTime?: number; title: string; status?: string; demo?: boolean };
+export type TimelineMarker = { id: string; time: number; endTime?: number; title: string; status?: string; demo?: boolean; noteId?: string; notes?: { id: string; time: number; title: string }[] };
 const timecode = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 // Synthetic room ambience: clustered speech, pauses and occasional transients.
@@ -149,6 +149,7 @@ export default function EditorTimeline({ camera, room, duration, position, playi
         const selected = selection === marker.id || hoveredId === marker.id;
         return <div className={`editor-incident status-${marker.status ?? "open"}`} key={marker.id}>
           <button className={`editor-incident-range ${selected ? "selected" : ""}`} style={{ left: `${marker.time / safeDuration * 100}%`, width: `${Math.max((end ?? marker.time + 1) - marker.time, safeDuration * .004) / safeDuration * 100}%` }} onClick={() => onSeek(marker.time, marker)} aria-label={`Jump to ${marker.title} at ${timecode(marker.time)}`} title={marker.title}><span className="incident-fold" /></button>
+          {marker.notes?.filter(note => note.time >= 0 && note.time <= safeDuration).map(note => <button key={note.id} className="timeline-note-pin" aria-label={`Open note: ${note.title}`} title={note.title} style={{ left: `${note.time / safeDuration * 100}%` }} onClick={() => onSeek(note.time, { ...marker, noteId: note.id })}><Pin size={12} /></button>)}
         </div>;
       })}
     </div>
