@@ -63,7 +63,6 @@ cd worker && .venv/bin/python -m pytest -q                  # Spacetime worker
 npm run test:skeleton && npm run test:catchup && npm run test:media
 ```
 
-Each requirement in [docs/SPEC.md](docs/SPEC.md) and [CLUADE.md](CLUADE.md) names its test. The math behind the fall rule and the cost numbers is in [docs/MATH.md](docs/MATH.md).
 
 ## Limits
 
