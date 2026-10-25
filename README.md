@@ -14,6 +14,7 @@
 6. **Keeps the record.** Each incident has a timeline: detected, messaged, called, acknowledged, resolved.
 
 ![How ollo works](docs/images/how-ollo-works.png)
+
 Diagram made with Mana.space
 ## Why it matters
 
