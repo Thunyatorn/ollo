@@ -2872,7 +2872,6 @@ nav > button:hover,
 .real-video-overlay.calibrating {
   pointer-events: auto;
   cursor: crosshair;
-  outline: 1px dashed var(--palette-215);
 }
 .tracking-box.approaching {
   border-color: var(--palette-51);
