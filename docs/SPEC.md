@@ -63,6 +63,17 @@ Development is spec-first. Every behavior has a requirement with a stable ID, te
 - **Acceptance:** after connecting the browser camera, the main camera view shows the live picture (frames advancing) on first connect, after a round trip through Settings, and after selecting another camera and selecting this one again.
 - **Verify:** `scripts/webcam-smoke.mjs`
 
+#### SRC-6 · Uploaded videos are analyzed by the server, every frame
+- **Status:** Done
+- **Why:** browser sampling (SRC-2) skips frames whenever the computer is busy or the tab is hidden. Measured on the stock runner clip (2026-10-24): the fall is caught at 6–12 fps and missed at 4 fps and 1 fps; the user's runs averaged about 6 fps and missed it.
+- **Acceptance:**
+  - **Server decodes.** For a recorded source (`POST /api/video`), the server reads the stored file itself and analyzes the frame at every 1/12 s of the video's own timeline (`ANALYSIS_FPS`), in order, through the same path as `POST /api/frames` (SRC-3 ordering, vision, incidents, clips). It never skips one: when analysis is busy, the next frame waits.
+  - **Follows playback.** The dashboard sends only its playhead, `POST /api/playhead` with `{session_id, epoch, media_time_ms}`, several times a second. The server analyzes up to the playhead and no further, so alerts appear as the video plays. When the computer is slow or the tab is hidden, analysis falls behind and catches up; the reply carries `analyzed_to_ms` and the latest overlays.
+  - **Pause and seek.** A paused playhead stops analysis at that point. A seek (a new epoch from `POST /api/session/start`) restarts analysis; frames of the old epoch never count.
+  - **Where analysis starts.** `POST /api/session/start` may carry `{media_time_ms}`, the playback position the new epoch starts from (0 after an upload, the seek position after a seek). Analysis of that epoch begins there, even if the first playhead arrives late (a hidden tab); without it, at the first playhead.
+  - **Only for recordings.** `POST /api/playhead` is refused (409) for any other source, and `POST /api/frames` is refused for a recording. The browser camera keeps SRC-2 sampling.
+- **Verify:** `test_playback.py::test_every_frame_in_order_even_when_analysis_is_busy`, `test_playback.py::test_pause_and_seek_follow_the_playhead`, `test_playback.py::test_playhead_endpoint_analyzes_only_recordings`
+
 #### SRC-4 · Server-side camera capture
 - **Status:** Done
 - **Acceptance:**
@@ -226,12 +237,12 @@ Development is spec-first. Every behavior has a requirement with a stable ID, te
 - **Acceptance:** No real call is placed unless all of these hold:
   - `CALLS_ENABLED=true`
   - provider credentials are present
-  - the callback URL is HTTPS
+  - the callback URL is HTTPS, and it reaches this server: `GET {PUBLIC_CALLBACK_BASE_URL}/health` answers with this server's health reply. Checked when arming (a refusal says to start the tunnel) and again before each real call (a dead tunnel fails the call with that reason instead of dialing a phone that would hear "application error"). Found 2026-10-24: the ngrok tunnel had stopped and an answered call could not fetch its instructions.
   - the E.164 destination is on the allowlist
   - the operator has armed calls this session
 
   Arming resets on restart. There are at most 6 real calls per session. Destinations come only from server configuration.
-- **Verify:** `test_api.py::test_simulation_cannot_place_call`
+- **Verify:** `test_api.py::test_simulation_cannot_place_call`, `test_twilio_trial.py::test_unreachable_callback_blocks_arming_and_calls`
 
 #### ESC-2 · Keypad acknowledgment with signed callbacks
 - **Status:** Done
@@ -402,7 +413,8 @@ Development is spec-first. Every behavior has a requirement with a stable ID, te
   - The page title and brand read ollo, and no visible text says Lookout.
   - Each tracked person is drawn as a keypoint skeleton (COCO limb pairs, confident keypoints only) under their box, labeled with their track ID.
   - Fixture, illustration and simulated states stay visibly labeled.
-- **Verify:** `scripts/design-smoke.mjs`
+  - Found after the 2026-10-24 UI update: the skeleton vanished because overlays were shown only for role IDs (`primary`, …) while the server labels roles "Primary caregiver". Staff roles are matched by their first word, so either form shows overlays.
+- **Verify:** `scripts/design-smoke.mjs`, `scripts/skeleton-smoke.mjs`
 
 ### Privacy and safety
 

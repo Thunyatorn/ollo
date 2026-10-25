@@ -529,6 +529,23 @@ export default function App() {
         s.session.status !== "active"
       )
         return;
+      if (source) {
+        // SRC-6: the server decodes the uploaded file and analyzes every frame up to this playhead.
+        inFlight = true;
+        request<{ overlays?: LookoutState["overlays"] }>("/playhead", {
+          session_id: s.session.id,
+          epoch: s.session.epoch,
+          media_time_ms: Math.round(v.currentTime * 1000),
+        })
+          .then((r) => {
+            if (r.overlays) setState((prev) => ({ ...prev, overlays: r.overlays }));
+          })
+          .catch(() => {})
+          .finally(() => {
+            inFlight = false;
+          });
+        return;
+      }
       canvas.width = 640;
       canvas.height = Math.round((640 * v.videoHeight) / v.videoWidth);
       canvas.getContext("2d")?.drawImage(v, 0, 0, canvas.width, canvas.height);
@@ -790,7 +807,7 @@ export default function App() {
         const body = new FormData();
         body.append("file", f);
         setState(await request("/video", body));
-        setState(await request("/session/start", {}));
+        setState(await request("/session/start", { media_time_ms: 0 })); // SRC-6: analysis starts at 0
         setAnalysisReady(true);
         notify("Video connected. Analysis follows playback.");
       } catch {
@@ -877,7 +894,7 @@ export default function App() {
     }
     if (connected) {
       try {
-        setState(await request(`/session/${next ? "start" : "pause"}`, {}));
+        setState(await request(`/session/${next ? "start" : "pause"}`, next && video.current ? { media_time_ms: Math.round(video.current.currentTime * 1000) } : {}));
         seq.current = 0;
       } catch {
         setAnalysisReady(false);
@@ -1094,10 +1111,10 @@ export default function App() {
                               );
                             }}
                             onEnded={() => setPlaying(false)}
-                            onSeeked={() => {
+                            onSeeked={(e) => {
                               seq.current = 0;
                               if (connected && analysisReady)
-                                request<LookoutState>("/session/start", {})
+                                request<LookoutState>("/session/start", { media_time_ms: Math.round(e.currentTarget.currentTime * 1000) })
                                   .then(setState)
                                   .catch(() =>
                                     notify(
@@ -2041,9 +2058,9 @@ export default function App() {
                               armed: !state.session.calls_armed,
                             }),
                           );
-                        } catch {
+                        } catch (e) {
                           notify(
-                            "Configure calling credentials and allowlisted teammates first.",
+                            e instanceof Error && e.message.includes("cannot reach") ? e.message : "Configure calling credentials and allowlisted teammates first.",
                           );
                         }
                       }}

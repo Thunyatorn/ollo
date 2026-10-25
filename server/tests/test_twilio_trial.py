@@ -31,10 +31,13 @@ def trial_env(monkeypatch):
         monkeypatch.setenv(key, value)
 
 
-def mock_twilio(monkeypatch, account_type, created):
-    """Cartesia returns audio; Twilio reports the account type and records each call it is asked to create."""
+def mock_twilio(monkeypatch, account_type, created, tunnel_up=True):
+    """Cartesia returns audio; Twilio reports the account type and records each call it is asked to create.
+    The tunnel (PUBLIC_CALLBACK_BASE_URL) answers /health when up, like ngrok forwarding to this server."""
     def handler(request):
         url = str(request.url)
+        if url == BASE + '/health':
+            return httpx.Response(200, json={'status': 'ok', 'purpose': 'process health only'}) if tunnel_up else httpx.Response(404, text='ERR_NGROK_3200 endpoint offline')
         if url.startswith('https://api.cartesia.ai/tts/bytes'):
             return httpx.Response(200, content=b'RIFF-test-audio')
         if url == f'https://api.twilio.com/2010-04-01/Accounts/{SID}.json':
@@ -136,3 +139,24 @@ def test_polled_status_moves_forward_and_expedites_backup(trial_env, monkeypatch
         monkeypatch.setattr(calls, 'call_status', still_ringing)
         asyncio.run(watch_call(stuck['id'], CALL, every=0, ring_limit=0))
         assert hung_up == [CALL]                                                # rang too long: hung up once
+
+
+def test_unreachable_callback_blocks_arming_and_calls(trial_env, monkeypatch):
+    created = []
+    mock_twilio(monkeypatch, 'Trial', created, tunnel_up=False)
+    calls.forget_callback_check()
+    with TestClient(app) as client:
+        client.get('/api/state'); client.post('/api/session/reset')
+        refused = client.post('/api/session/arm-calls', json={'armed': True})
+        assert refused.status_code == 409 and 'ngrok http 127.0.0.1:8000' in refused.json()['detail']
+        assert client.get('/api/state').json()['session']['calls_armed'] is False
+    result = asyncio.run(Calls(None).place({'room': 'Toddler room', 'kind': 'fall'}, 0, True))
+    assert result['status'] == 'failed' and 'cannot reach' in result['message'] and created == []     # no phone rings into a dead tunnel
+
+    mock_twilio(monkeypatch, 'Trial', created, tunnel_up=True)
+    calls.forget_callback_check()
+    with TestClient(app) as client:
+        client.get('/api/state')
+        assert client.post('/api/session/arm-calls', json={'armed': True}).status_code == 200
+        client.post('/api/session/reset')
+    assert asyncio.run(Calls(None).place({'room': 'Toddler room', 'kind': 'fall'}, 0, True))['status'] == 'initiated'
