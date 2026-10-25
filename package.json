@@ -16,6 +16,7 @@
     "test:camera": "node scripts/camera-smoke.mjs",
     "test:webcam": "node scripts/webcam-smoke.mjs",
     "test:skeleton": "node scripts/skeleton-smoke.mjs",
+    "test:catchup": "node scripts/catchup-smoke.mjs",
     "eval": ".venv/bin/python -m server.evaluate",
     "test:threads": "node --test scripts/incident-threads.test.mjs scripts/timecode.test.mjs",
     "test:threads:ui": "node scripts/incident-threads-smoke.mjs"

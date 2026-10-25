@@ -235,8 +235,15 @@ export default function App() {
     stream = useRef<MediaStream | null>(null),
     seq = useRef(0),
     stateRef = useRef(state),
+    // SRC-6: playback holds while server analysis of an upload is behind, so skeletons match the picture.
+    catchUp = useRef<{ since: number; analyzedTo: number } | null>(null),
     settingsHydrated = useRef(false);
   stateRef.current = state;
+  const [catchingUp, setCatchingUp] = useState(false);
+  const endCatchUp = () => {
+    catchUp.current = null;
+    setCatchingUp(false);
+  };
   // SRC-5: leaving the camera view (Settings, another camera) re-creates the <video>; give each new one the live camera.
   const attachVideo = (element: HTMLVideoElement | null) => {
     video.current = element;
@@ -522,7 +529,7 @@ export default function App() {
       if (
         inFlight ||
         !v ||
-        v.paused ||
+        (v.paused && !catchUp.current) ||
         v.readyState < 2 ||
         !connected ||
         !analysisReady ||
@@ -532,13 +539,29 @@ export default function App() {
       if (source) {
         // SRC-6: the server decodes the uploaded file and analyzes every frame up to this playhead.
         inFlight = true;
-        request<{ overlays?: LookoutState["overlays"] }>("/playhead", {
+        request<{ overlays?: LookoutState["overlays"]; analyzed_to_ms?: number }>("/playhead", {
           session_id: s.session.id,
           epoch: s.session.epoch,
           media_time_ms: Math.round(v.currentTime * 1000),
         })
           .then((r) => {
             if (r.overlays) setState((prev) => ({ ...prev, overlays: r.overlays }));
+            const analyzedTo = r.analyzed_to_ms ?? -1;
+            const behind = v.currentTime * 1000 - analyzedTo;
+            const hold = catchUp.current;
+            if (!hold && behind > 500 && !v.paused && !v.ended) {
+              catchUp.current = { since: Date.now(), analyzedTo };
+              v.pause();
+              setCatchingUp(true);
+            } else if (hold) {
+              if (analyzedTo > hold.analyzedTo) catchUp.current = { since: Date.now(), analyzedTo };
+              const stalled = Date.now() - (catchUp.current?.since ?? hold.since) > 15000;
+              if (behind <= 150 || stalled) {
+                if (stalled) notify("Analysis stopped making progress, so playback continues without waiting.");
+                endCatchUp();
+                v.play().catch(() => {});
+              }
+            }
           })
           .catch(() => {})
           .finally(() => {
@@ -885,6 +908,7 @@ export default function App() {
   }
   async function togglePlay() {
     if (room === 2) return;
+    endCatchUp();
     const next = !playing;
     if (next) setExplicitIncident(null);
     setPlaying(next);
@@ -903,6 +927,7 @@ export default function App() {
   }
   function seekPlayback(seconds: number) {
     if (isLiveFeed) return;
+    endCatchUp();
     setExplicitIncident(null);
     setPlaying(false);
     setPosition(seconds);
@@ -1153,7 +1178,9 @@ export default function App() {
                               />
                               {state.camera.health === "offline"
                                 ? "Analysis unavailable"
-                                : !analysisReady
+                                : catchingUp
+                                  ? "Analyzing… playback waits"
+                                  : !analysisReady
                                   ? "Local playback"
                                   : state.camera.health === "degraded"
                                     ? "Analysis delayed"
@@ -1315,7 +1342,7 @@ export default function App() {
                                   {i + 1}
                                 </span>
                               ))}
-                            {zones && (
+                            {zones && (state.settings.zone as { enabled?: boolean } | undefined)?.enabled !== false && (
                               <svg
                                 viewBox="0 0 1000 1000"
                                 preserveAspectRatio="none"

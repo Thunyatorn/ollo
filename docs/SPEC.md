@@ -72,7 +72,8 @@ Development is spec-first. Every behavior has a requirement with a stable ID, te
   - **Pause and seek.** A paused playhead stops analysis at that point. A seek (a new epoch from `POST /api/session/start`) restarts analysis; frames of the old epoch never count.
   - **Where analysis starts.** `POST /api/session/start` may carry `{media_time_ms}`, the playback position the new epoch starts from (0 after an upload, the seek position after a seek). Analysis of that epoch begins there, even if the first playhead arrives late (a hidden tab); without it, at the first playhead.
   - **Only for recordings.** `POST /api/playhead` is refused (409) for any other source, and `POST /api/frames` is refused for a recording. The browser camera keeps SRC-2 sampling.
-- **Verify:** `test_playback.py::test_every_frame_in_order_even_when_analysis_is_busy`, `test_playback.py::test_pause_and_seek_follow_the_playhead`, `test_playback.py::test_playhead_endpoint_analyzes_only_recordings`
+  - **The picture waits for the analysis.** Found 2026-10-25 on a 1080p iPhone clip: analysis ran 3–8 s behind playback (it starts only once the upload arrives, and this laptop analyzes at most about 13–14 fps), so every skeleton was filtered out as stale. When analysis is more than 0.5 s behind the playhead, the dashboard holds playback and shows "Analyzing…"; it resumes once analysis is within 0.15 s. If analysis makes no progress for 15 s, playback resumes with a notice. A pause, play or seek by the viewer ends the hold.
+- **Verify:** `test_playback.py::test_every_frame_in_order_even_when_analysis_is_busy`, `test_playback.py::test_pause_and_seek_follow_the_playhead`, `test_playback.py::test_playhead_endpoint_analyzes_only_recordings`, `scripts/catchup-smoke.mjs`
 
 #### SRC-4 · Server-side camera capture
 - **Status:** Done
@@ -413,6 +414,7 @@ Development is spec-first. Every behavior has a requirement with a stable ID, te
   - The page title and brand read ollo, and no visible text says Lookout.
   - Each tracked person is drawn as a keypoint skeleton (COCO limb pairs, confident keypoints only) under their box, labeled with their track ID.
   - Fixture, illustration and simulated states stay visibly labeled.
+  - The restricted zone is drawn on the video only while it is enabled; a disabled zone draws nothing (found 2026-10-25: the dashed box stayed after the zone was switched off).
   - Found after the 2026-10-24 UI update: the skeleton vanished because overlays were shown only for role IDs (`primary`, …) while the server labels roles "Primary caregiver". Staff roles are matched by their first word, so either form shows overlays.
 - **Verify:** `scripts/design-smoke.mjs`, `scripts/skeleton-smoke.mjs`
 

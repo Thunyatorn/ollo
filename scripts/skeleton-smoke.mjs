@@ -85,9 +85,12 @@ try {
   await page.locator(".skeleton line").first().waitFor({ timeout: 10000 });
   assert.ok((await page.locator(".skeleton line").count()) >= 12, "Skeleton limbs drawn");
   await page.getByText(/Person 1/).first().waitFor();
+  const zone = state.settings.zone || {};
+  const drawn = await page.locator(".camera-stage svg polygon[stroke-dasharray]").count();
+  assert.equal(drawn, zone.enabled ? 1 : 0, `restricted zone drawn ${drawn} time(s) while enabled=${zone.enabled}`);
   await page.screenshot({ path: "test-results/skeleton.png" });
   assert.deepEqual(errors, []);
-  console.log("Passed: skeleton and track label drawn over an uploaded video, with the server's caregiver roles.");
+  console.log("Passed: skeleton and track label drawn over an uploaded video, with the server's caregiver roles; the restricted zone is drawn only while enabled.");
 } finally {
   await browser.close();
 }
