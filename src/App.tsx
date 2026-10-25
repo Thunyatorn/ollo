@@ -1,3 +1,5 @@
+import ReviewActions from "./ReviewActions";
+import { clockTime } from "./timecode";
 import Navbar from "./Navbar";
 import Brand from "./Brand";
 import { useEffect, useRef, useState } from "react";
@@ -16,7 +18,6 @@ import {
   Focus,
   Grid2X2,
   History,
-  Keyboard,
   LockKeyhole,
   Maximize2,
   Pause,
@@ -39,7 +40,7 @@ import EventTrace from "./EventTrace";
 import ResizableWorkspace from "./ResizableWorkspace";
 import LiveCameraPlaceholder from "./LiveCameraPlaceholder";
 import CameraSidebar from "./CameraSidebar";
-import PlaybackTime from "./PlaybackTime";
+import { PlaybackLiveLabel } from "./PlaybackTime";
 import { demoIncidents } from "./demoIncidents";
 import FullscreenControls from "./FullscreenControls";
 import usePlaybackShortcuts from "./usePlaybackShortcuts";
@@ -130,20 +131,20 @@ const rooms = [
     tracks: demoTracks,
   },
   {
-    name: "Gas station",
+    name: "Activity room",
     id: "CAM 02",
-    image: "/gas-station-cctv.png",
-    alt: "AI-generated CCTV-style gas station aisle with one adult browsing snacks",
-    tracks: [{ x: 44.5, y: 19, w: 12, h: 48 }],
+    image: "/playroom-cctv.png",
+    alt: "Illustrative playroom fixture, reused for the second demo camera",
+    tracks: demoTracks,
   },
-  { name: "Live camera", id: "CAM 03", image: "", alt: "", tracks: [] },
+  { name: "Entrance", id: "CAM 03", image: "", alt: "", tracks: [] },
 ];
 function DemoScene({ room, zones, position }: { room: number; zones: boolean; position?: number }) {
   const camera = rooms[room];
   return (
     <div className="demo-scene">
       <img src={camera.image} alt={camera.alt} />
-      {position !== undefined && <div className="camera-clock footage-clock"><span>{camera.id} · EAST WING</span><strong>{stamp(position)}</strong></div>}
+      {position !== undefined && <div className="camera-clock footage-clock"><span>{camera.id} · EAST WING</span><strong>{clockTime(new Date(new Date().setHours(9, 0, 0, 0)).toISOString(), position)}</strong></div>}
       {zones && (
         <div className="demo-tracks" aria-label="Illustrative tracking boxes">
           {camera.tracks.map((t, i) => (
@@ -152,7 +153,7 @@ function DemoScene({ room, zones, position }: { room: number; zones: boolean; po
               key={i}
               style={{ left: `${t.x}%`, top: `${t.y}%`, width: `${t.w}%`, height: `${t.h}%` }}
             >
-              <span>PERSON {String(i + 1).padStart(2, "0")}<i>DEMO</i></span>
+              <span>PERSON {String(i + 1).padStart(2, "0")}</span>
             </div>
           ))}
         </div>
@@ -177,7 +178,7 @@ export default function App() {
   const [audioPeaks, setAudioPeaks] = useState<number[] | null>(null);
   const [removedCameras, setRemovedCameras] = useState<number[]>([]);
   const [cameraLayout, setCameraLayout] = useState<CameraLayout>("single");
-  const [reviewDate, setReviewDate] = useState<string | null>(null);
+  const [reviewDate, setReviewDate] = useState<string | null>(() => dateKey(new Date()));
   const [state, setState] = useState<LookoutState>(initialState),
     [connected, setConnected] = useState(false),
     [page, setPage] = useState(() => { const requested = new URLSearchParams(window.location.search).get("page"); return requested === "history" || requested === "settings" ? requested : "monitor"; }),
@@ -243,6 +244,19 @@ export default function App() {
   };
   const incidentDate = (at: string | number) => dateKey(new Date(typeof at === "number" ? at * 1000 : at));
   const datedState = reviewDate ? { ...state, incidents: state.incidents.filter(i => incidentDate(i.opened_at) === reviewDate) } : state;
+  const isLiveFeed = room === 2 || (room === 0 && (sourceType === "server" || sourceType === "webcam"));
+  const [liveRecordingStart, setLiveRecordingStart] = useState<string | null>(null);
+  const [liveRecordedSeconds, setLiveRecordedSeconds] = useState(0);
+  useEffect(() => {
+    if (sourceType !== "webcam" && sourceType !== "server") { setLiveRecordingStart(null); setLiveRecordedSeconds(0); return; }
+    const supplied = state.session.recording_started_at;
+    const start = supplied && Number.isFinite(Date.parse(supplied)) ? supplied : new Date().toISOString();
+    setLiveRecordingStart(start);
+    const update = () => setLiveRecordedSeconds(Math.max(0, (Date.now() - Date.parse(start)) / 1000));
+    update(); const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [sourceType, source, state.session.epoch, state.session.recording_started_at]);
+  const timelineDuration = isLiveFeed ? room === 2 ? 0 : liveRecordedSeconds : duration;
   const currentSourceKey = sourceType === "illustration" ? "fixture" : sourceType === "recording" ? state.session.media_id : sourceType === "server" ? "server_camera" : "webcam";
   const mockIncidents = room !== 0 || sourceType === "illustration" ? demoIncidents(room) : [];
   const cameraIncidents = [
@@ -250,11 +264,14 @@ export default function App() {
     ...mockIncidents.filter(i => !reviewDate || incidentDate(i.opened_at) === reviewDate),
   ].sort((a, b) => (a.media_time_ms ?? 0) - (b.media_time_ms ?? 0));
   const traceState = { ...datedState, incidents: cameraIncidents };
-  const timelineMarkers = cameraIncidents.filter(i => i.media_time_ms !== undefined).map(i => ({ id: i.id, time: i.media_time_ms! / 1000, endTime: i.media_end_time_ms !== undefined ? i.media_end_time_ms / 1000 : i.resolved_at ? i.media_time_ms! / 1000 + Math.max(0, (new Date(i.resolved_at).getTime() - new Date(typeof i.opened_at === "number" ? i.opened_at * 1000 : i.opened_at).getTime()) / 1000) : undefined, title: i.title, demo: !!i.demo_response }));
+  const timelineMarkers = cameraIncidents.filter(i => i.media_time_ms !== undefined).map(i => ({ id: i.id, time: i.media_time_ms! / 1000, endTime: i.media_end_time_ms !== undefined ? i.media_end_time_ms / 1000 : i.resolved_at ? i.media_time_ms! / 1000 + Math.max(0, (new Date(i.resolved_at).getTime() - new Date(typeof i.opened_at === "number" ? i.opened_at * 1000 : i.opened_at).getTime()) / 1000) : undefined, title: i.title, status: i.status, demo: !!i.demo_response }));
   const playheadIncidentId = timelineMarkers.find(marker =>
     marker.endTime !== undefined && position >= marker.time && position <= marker.endTime
   )?.id;
-  const selectedIncident = playheadIncidentId || null;
+  const [explicitIncident, setExplicitIncident] = useState<string | null>(null);
+  const [hoveredIncident, setHoveredIncident] = useState<string | null>(null);
+  const selectedIncident = cameraIncidents.some(i => i.id === explicitIncident) ? explicitIncident : playheadIncidentId || null;
+  const recordingStartedAt = sourceType === "illustration" || room === 1 ? new Date(new Date().setHours(9, 0, 0, 0)).toISOString() : isLiveFeed ? liveRecordingStart ?? undefined : state.session.recording_started_at;
   const active = state.incidents.find(
     (i) => i.status === "open" || i.status === "acknowledged",
   );
@@ -834,6 +851,7 @@ export default function App() {
   async function togglePlay() {
     if (room === 2) return;
     const next = !playing;
+    if (next) setExplicitIncident(null);
     setPlaying(next);
     if (video.current) {
       if (next) video.current.play().catch(() => {});
@@ -849,7 +867,8 @@ export default function App() {
     }
   }
   function seekPlayback(seconds: number) {
-    if (room === 2) return;
+    if (isLiveFeed) return;
+    setExplicitIncident(null);
     setPlaying(false);
     setPosition(seconds);
     if (video.current) {
@@ -859,16 +878,18 @@ export default function App() {
   }
   usePlaybackShortcuts({
     enabled: !signedOut && page === "monitor" && !sourceOpen && !report && !scenarioOpen && !calibrating && !drawing && !rulesOpen && !window.location.pathname.startsWith("/respond/"),
-    position, duration,
+    position, duration, playing,
     onToggle: () => { void togglePlay(); },
     onPause: () => { setPlaying(false); video.current?.pause(); },
     onSeek: seekPlayback,
-    onMute: () => setMuted(m => !m),
+    onMute: () => { if (state.session.audio_permitted === true) setMuted(m => !m); },
     onFullscreen: () => {
       if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
       else void stage.current?.requestFullscreen?.().catch(() => {});
     },
     onLayout: setCameraLayout,
+    incidents: timelineMarkers,
+    onForward: () => { if (!isLiveFeed) { setExplicitIncident(null); setPlaying(true); void video.current?.play().catch(() => {}); } },
   });
   async function reset() {
     audioFile.current = null;
@@ -1004,6 +1025,8 @@ export default function App() {
     <div className={`app-shell ${page === "monitor" ? "editor-workspace" : ""}`}>
       <main className="main">
         <Navbar
+          layout={cameraLayout}
+          onLayout={page === "monitor" ? setCameraLayout : undefined}
           accountName={state.caregivers[0]?.name || "Local operator"}
           connected={connected}
           notifications={state.incidents}
@@ -1037,7 +1060,7 @@ export default function App() {
                             src={source || undefined}
                             autoPlay
                             playsInline
-                            muted={muted}
+                            muted={muted || state.session.audio_permitted !== true}
                             onTimeUpdate={(e) =>
                               setPosition(e.currentTarget.currentTime)
                             }
@@ -1114,7 +1137,7 @@ export default function App() {
                           )}
                           {sourceType !== "illustration" && <div className="camera-clock">
                             <span>CAM 01 · EAST WING</span>
-                            <strong>{stamp(position)}</strong>
+                            <strong>{clockTime(recordingStartedAt, position, true)}</strong>
                           </div>}
                         </div>
                         {sourceType !== "illustration" && (
@@ -1198,7 +1221,7 @@ export default function App() {
                                     y1={o.approach.path[0][1] * 1000}
                                     x2={o.approach.path[1][0] * 1000}
                                     y2={o.approach.path[1][1] * 1000}
-                                    stroke="#e4be86"
+                                    stroke="var(--status-open)"
                                     strokeWidth="2"
                                     strokeDasharray="6 4"
                                     vectorEffect="non-scaling-stroke"
@@ -1280,8 +1303,8 @@ export default function App() {
                                   )
                                     .map((v) => `${v[0] * 1000},${v[1] * 1000}`)
                                     .join(" ")}
-                                  fill="#c3d2aa15"
-                                  stroke="#c3d2aa"
+                                  fill="var(--primary-soft)"
+                                  stroke="var(--status-resolved)"
                                   strokeWidth="2"
                                   strokeDasharray="7 5"
                                   vectorEffect="non-scaling-stroke"
@@ -1642,7 +1665,7 @@ export default function App() {
                       <button className={`icon-button ${zones ? "enabled" : ""}`} aria-label="Toggle zone overlay" aria-pressed={zones} title="Toggle zone overlay" onClick={() => setZones(!zones)}><Focus size={14} /></button>
                       <button className="icon-button" aria-label="Fullscreen camera" title="Fullscreen" onClick={() => stage.current?.requestFullscreen?.()}><Maximize2 size={14} /></button>
                     </div>
-                    {room !== 2 && <FullscreenControls stage={stage} position={position} duration={duration} playing={playing} muted={muted} onToggle={() => { void togglePlay(); }} onMute={() => setMuted(m => !m)} onSeek={seekPlayback} />}
+                    {room !== 2 && <FullscreenControls live={isLiveFeed} stage={stage} position={position} duration={duration} playing={playing} muted={muted || state.session.audio_permitted !== true} onToggle={() => { void togglePlay(); }} onMute={() => setMuted(m => !m)} onSeek={seekPlayback} />}
                   </div>
 
                 </div>
@@ -1655,27 +1678,80 @@ export default function App() {
                   {cameraLayout === "grid" ? <div className="empty-camera-slot" aria-label="Empty camera slot 4" /> : <button className="add-camera-tile" onClick={() => { setCameraMessage(""); setSourceOpen(true); }}><Plus size={20} /><strong>Connect a camera</strong><span>RTSP or HTTP stream</span><small>One analyzed source at a time</small></button>}
                 </div>}
                 </div>
+                  <div className="playback">
 
+                    <div className="playback-top">
+                      <div className="playback-left">
+                        <button
+                          className="icon-button play-button"
+                          aria-label={
+                            playing ? "Pause playback" : "Play playback"
+                          }
+                          onClick={togglePlay}
+                          disabled={room === 2}
+                          title="Play / pause (Space)"
+                          aria-keyshortcuts="Space"
+                        >
+                          {playing ? (
+                            <Pause size={16} fill="currentColor" />
+                          ) : (
+                            <Play size={16} fill="currentColor" />
+                          )}
+                        </button>
+                        {isLiveFeed ? <PlaybackLiveLabel /> : <time className="playback-clock" aria-label="Current playback time">{clockTime(recordingStartedAt, position, true)}</time>}
+                        {!isLiveFeed && <span className="speed">1×</span>}
+                      </div>
+                    <ReviewActions cameraId={rooms[room].id} userId={form.primary_name} duration={duration} keptUntil={state.session.kept_until} audioPresent={!!audioPeaks} audioPermitted={state.session.audio_permitted === true} />
+
+                    </div>
+                    <EditorTimeline
+                      camera={`${rooms[room].name} · ${rooms[room].id}`}
+                      room={room}
+                      duration={timelineDuration}
+                      position={position}
+                      playing={room === 2 ? false : playing}
+                      live={isLiveFeed}
+                      liveDisconnected={room === 2}
+                      demo={room !== 2 && (room !== 0 || sourceType === "illustration")}
+                      audioPermitted={state.session.audio_permitted === true}
+                      peaks={state.session.audio_permitted === true ? audioPeaks : null}
+                      video={video}
+                      selectedId={selectedIncident}
+                      hoveredId={hoveredIncident}
+                      recordingStartedAt={recordingStartedAt}
+
+                      markers={timelineMarkers}
+                      onSeek={(seconds, marker?: TimelineMarker) => {
+                        setExplicitIncident(marker?.id ?? null);
+                        if (isLiveFeed) return;
+                        setPlaying(false);
+                        setPosition(seconds);
+                        if (video.current) {
+                          video.current.pause();
+                          video.current.currentTime = seconds;
+                        }
+                      }}
+                    />
+                  </div>
               </div>
               <div className="monitor-side-panel">
-                <details className="sidebar-section" open><summary>Date & view</summary>
-                <MonitoringControls date={reviewDate} onDate={setReviewDate} layout={cameraLayout} onLayout={setCameraLayout} eventDates={new Set((room !== 0 || sourceType === "illustration" ? mockIncidents : state.incidents).map(i => incidentDate(i.opened_at)))} />
-                </details>
-                <details className="sidebar-section" open><summary>Cameras</summary>
-                  <CameraSidebar rooms={rooms} selected={room} removed={removedCameras} onSelect={setRoom} onRemove={index => {
-                    const remaining = rooms.map((_, i) => i).filter(i => i !== index && !removedCameras.includes(i));
-                    if (!remaining.length) return;
-                    setRemovedCameras(previous => [...previous, index]);
-                    if (room === index) setRoom(remaining[0]);
-                  }} />
+                <details className="sidebar-section" open><summary>Date</summary>
+                <MonitoringControls date={reviewDate} onDate={setReviewDate} footageDates={new Set([...(recordingStartedAt ? [dateKey(new Date(recordingStartedAt))] : []), ...mockIncidents.map(i => incidentDate(i.opened_at))])} openIncidentDates={new Set((sourceType === "illustration" ? mockIncidents : state.incidents).filter(i => i.status === "open").map(i => incidentDate(i.opened_at)))} eventDates={new Set((room !== 0 || sourceType === "illustration" ? mockIncidents : state.incidents).map(i => incidentDate(i.opened_at)))} />
                 </details>
                 <details className="sidebar-section sidebar-events" open><summary>Event trace<span>{traceState.incidents.length.toString().padStart(2, "0")}</span></summary>
               <EventTrace
                 state={traceState}
                 room={room}
                 selected={selectedIncident}
+                recordingStartedAt={recordingStartedAt}
+                userId={form.primary_name}
+                cameraId={rooms[room].id}
+                cameraThumbnail={sourceType === "illustration" || room === 1 ? rooms[room].image : serverFrame || undefined}
+                onHover={setHoveredIncident}
+                onSelect={setExplicitIncident}
                 onAction={action}
                 onSeek={(time) => {
+                  if (isLiveFeed) return;
                   setPlaying(false);
                   setPosition(time);
                   if (video.current) {
@@ -1697,70 +1773,17 @@ export default function App() {
                 }}
               />
                 </details>
+                <details className="sidebar-section" open><summary>Cameras</summary>
+                  <CameraSidebar modes={[sourceType === "illustration" ? "Demo" : sourceType === "recording" ? "Recorded" : state.camera.capture?.status === "offline" ? "Offline" : "Live", "Demo", "Offline"]} thumbnails={[sourceType === "illustration" ? rooms[0].image : sourceType === "server" ? serverFrame : "", rooms[1].image, ""]} rooms={rooms} selected={room} removed={removedCameras} onSelect={setRoom} onRemove={index => {
+                    const remaining = rooms.map((_, i) => i).filter(i => i !== index && !removedCameras.includes(i));
+                    if (!remaining.length) return;
+                    setRemovedCameras(previous => [...previous, index]);
+                    if (room === index) setRoom(remaining[0]);
+                  }} />
+                </details>
+
               </div>
-                  <div className="playback">
-                    <div className="playback-top">
-                      <div className="playback-left">
-                        <button
-                          className="icon-button play-button"
-                          aria-label={
-                            playing ? "Pause playback" : "Play playback"
-                          }
-                          onClick={togglePlay}
-                          disabled={room === 2}
-                          title="Play / pause (Space)"
-                          aria-keyshortcuts="Space"
-                        >
-                          {playing ? (
-                            <Pause size={16} fill="currentColor" />
-                          ) : (
-                            <Play size={16} fill="currentColor" />
-                          )}
-                        </button>
-                        <PlaybackTime position={position} duration={duration} disabled={room === 2} onSeek={seekPlayback} />
-                        {room !== 2 && <span className="speed">1×</span>}
-                      </div>
-                      <div className="playback-tools">
-                        <details className="shortcut-help">
-                          <summary aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)"><Keyboard size={15} /></summary>
-                          <div className="shortcut-popover" role="region" aria-label="Keyboard shortcuts">
-                            <strong>Keyboard shortcuts</strong>
-                            {[
-                              ["Play / pause", "Space"], ["Seek 5 seconds", "← / →"],
-                              ["Seek 10 seconds", "Shift + ← / →"], ["Start / end", "Home / End"],
-                              ["Pause", "K"], ["Mute / unmute", "M"], ["Fullscreen", "F"],
-                              ["Single / grid / focus", "1 / 2 / 3"], ["Show shortcuts", "?"],
-                            ].map(([label, keys]) => <div key={label}><span>{label}</span><kbd>{keys}</kbd></div>)}
-                          </div>
-                        </details>
 
-                      </div>
-                      <div className="playback-incident-key"><TriangleAlert size={14} strokeWidth={2} /><span>Incidents</span><span className="incident-key-count">{room === 2 ? 0 : timelineMarkers.length}</span></div>
-                    </div>
-                    <EditorTimeline
-                      camera={`${rooms[room].name} · ${rooms[room].id}`}
-                      room={room}
-                      duration={duration}
-                      position={position}
-                      playing={room === 2 ? false : playing}
-                      liveDisconnected={room === 2}
-                      demo={room !== 2 && (room !== 0 || sourceType === "illustration")}
-                      peaks={audioPeaks}
-                      video={video}
-                      selectedId={selectedIncident}
-
-                      markers={timelineMarkers}
-                      onSeek={(seconds, marker?: TimelineMarker) => {
-                        if (room === 2) return;
-                        setPlaying(false);
-                        setPosition(seconds);
-                        if (video.current) {
-                          video.current.pause();
-                          video.current.currentTime = seconds;
-                        }
-                      }}
-                    />
-                  </div>
             </ResizableWorkspace>
           </>
         ) : page === "history" ? (

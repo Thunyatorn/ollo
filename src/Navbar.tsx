@@ -1,10 +1,13 @@
+import ShortcutsDialog from "./ShortcutsDialog";
 import { useEffect, useRef } from "react";
 import type { Incident } from "./types";
-import { Bell, History, LogOut, MoreHorizontal, Settings2 } from "lucide-react";
+import { Bell, History, Keyboard, LogOut, MoreHorizontal, Settings2, Grid2X2, PanelTop } from "lucide-react";
 import Brand from "./Brand";
 import "./navbar.css";
 
 type NavbarProps = {
+  layout?: "single" | "grid" | "focus";
+  onLayout?: (layout: "single" | "grid") => void;
   accountName?: string;
   connected?: boolean;
   notifications?: Incident[];
@@ -13,6 +16,7 @@ type NavbarProps = {
 };
 
 export default function Navbar({
+  layout, onLayout,
   accountName = "Local operator",
   connected = false,
   notifications = [],
@@ -37,14 +41,25 @@ export default function Navbar({
           >
             <Brand />
           </button>
+          {onLayout && <nav className="workspace-view-tabs" aria-label="Workspace views" role="tablist">
+            {([{ id: "single", label: "Overview", Icon: PanelTop }, { id: "grid", label: "Grid", Icon: Grid2X2 }] as const).map(({id, label, Icon}, index) => {
+              const active = id === "grid" ? layout === "grid" : layout !== "grid";
+              return <button key={id} role="tab" aria-selected={active} tabIndex={active ? 0 : -1} onClick={() => onLayout(id)} onKeyDown={event => {
+                if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                event.preventDefault(); const next = event.key === "Home" ? 0 : event.key === "End" ? 1 : 1 - index;
+                onLayout(next === 0 ? "single" : "grid"); (event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("button")[next])?.focus();
+              }}><Icon size={14} /><span>{label}</span></button>;
+            })}
+          </nav>}
           <div className="account-area">
-            <div className="header-account-identity"><span className="account-avatar" aria-hidden="true">A</span><span>{accountName}</span></div>
+            <div className="header-account-identity"><span className="account-avatar" aria-hidden="true">{accountName.trim().charAt(0).toUpperCase()}</span><span>{accountName}</span></div>
             <details name="navbar-popover" className="account-menu" onKeyDown={e => { if (e.key === "Escape") { e.currentTarget.removeAttribute("open"); e.currentTarget.querySelector("summary")?.focus(); } }} onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) e.currentTarget.removeAttribute("open"); }}>
               <summary aria-label="Account menu" title="Account menu"><MoreHorizontal size={16} /></summary>
               <div className="account-dropdown">
-                <div className="account-identity"><span className="account-avatar" aria-hidden="true">A</span><div><strong>{accountName}</strong><span>Local workspace</span></div></div>
+                <div className="account-identity"><span className="account-avatar" aria-hidden="true">{accountName.trim().charAt(0).toUpperCase()}</span><div><strong>{accountName}</strong><span>Local workspace</span></div></div>
                 <div className="account-connection"><span className={`status-dot ${connected ? "" : "red"}`} />{connected ? "System connected" : "Local demo"}</div>
                 <button onClick={e => { onNavigate("settings"); e.currentTarget.closest("details")?.removeAttribute("open"); }}><Settings2 size={15} />Settings</button>
+                <button onClick={() => window.dispatchEvent(new Event("ollo:shortcuts"))}><Keyboard size={15} />Shortcuts</button>
                 <button onClick={e => { onNavigate("history"); e.currentTarget.closest("details")?.removeAttribute("open"); }}><History size={15} />Incident history</button>
                 <button className="account-signout" onClick={onSignOut}><LogOut size={15} />Sign out</button>
               </div>
@@ -69,6 +84,7 @@ export default function Navbar({
               </section>
             </details>
           </div>
+          <ShortcutsDialog />
         </header>
   );
 }

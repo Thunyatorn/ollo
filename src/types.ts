@@ -42,6 +42,9 @@ export interface LookoutState {
     calls_armed: boolean;
     source_type: string;
     media_id?: string;
+    recording_started_at?: string;
+    kept_until?: string;
+    audio_permitted?: boolean;
     camera_label?: string;
   };
   camera: {

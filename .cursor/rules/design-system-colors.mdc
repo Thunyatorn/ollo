@@ -1,0 +1,17 @@
+---
+description: Reuse Ollo design-system color tokens for every UI change
+alwaysApply: true
+---
+
+# Design-system colors
+
+- For all Ollo UI work, use the existing semantic CSS variables from `src/styles.css` and `src/tokens.css`.
+- Use surface tokens for backgrounds (`--surface-canvas`, `--surface-base`, `--surface-raised`, `--surface-hover`, `--surface-selected`, `--surface-overlay`), text tokens for text, `--edge-neutral` for structural borders, and `--primary`/status tokens for their intended roles.
+- Never add literal hex, RGB, HSL, OKLCH, named palette colors, or hardcoded fallback colors to component markup, inline styles, or component stylesheets.
+- Do not substitute a new Tailwind palette or invent a component-specific color token when an existing semantic token fits. An active neutral tab uses `var(--surface-hover)`.
+- Do not hide an arbitrary new literal in the tokens file to bypass this rule. Palette changes require an explicit user request; add an appropriate shared token only when no existing token serves the requested design.
+- For translucency, keep foreground text fully opaque and derive only the background from an existing token with `color-mix(..., transparent)`.
+- At external library boundaries (such as WaveSurfer), resolve the existing CSS variable with `getComputedStyle` instead of duplicating its color value.
+- Before finishing, check changed UI files for new literal colors and verify that referenced tokens exist. Existing legacy literals are not permission to add new ones.
+
+Example: `background: var(--surface-hover); color: var(--text-primary);`.

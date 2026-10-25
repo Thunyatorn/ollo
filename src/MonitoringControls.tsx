@@ -5,9 +5,9 @@ import { CalendarDays, ChevronLeft, ChevronRight, Grid2X2, PanelLeft, Square } f
 export type CameraLayout = "single" | "grid" | "focus";
 export const dateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
-export default function MonitoringControls({ date, onDate, layout, onLayout, eventDates }: {
+export default function MonitoringControls({ date, onDate, eventDates, footageDates = new Set(), openIncidentDates = new Set() }: {
   date: string | null; onDate: (date: string | null) => void;
-  layout: CameraLayout; onLayout: (layout: CameraLayout) => void; eventDates: Set<string>;
+  layout?: CameraLayout; onLayout?: (layout: CameraLayout) => void; eventDates: Set<string>; footageDates?: Set<string>; openIncidentDates?: Set<string>;
 }) {
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const datePicker = useRef<HTMLDetailsElement>(null);
@@ -39,7 +39,6 @@ export default function MonitoringControls({ date, onDate, layout, onLayout, eve
   }, [calendarOpen]);
   const today = dateKey(new Date());
   const count = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
-  const layouts = [{ id: "single", label: "Single", Icon: Square }, { id: "grid", label: "Grid", Icon: Grid2X2 }, { id: "focus", label: "Focus", Icon: PanelLeft }] as const;
   return <div className="monitor-controls">
     <div className="monitor-control-actions">
       <details ref={datePicker} onToggle={event => setCalendarOpen(event.currentTarget.open)} className="date-picker" onKeyDown={e => { if (e.key === "Escape") { e.currentTarget.removeAttribute("open"); e.currentTarget.querySelector("summary")?.focus(); } }}>
@@ -51,13 +50,18 @@ export default function MonitoringControls({ date, onDate, layout, onLayout, eve
             {Array.from({ length: month.getDay() }, (_, i) => <span key={`blank-${i}`} />)}
             {Array.from({ length: count }, (_, i) => {
               const key = dateKey(new Date(month.getFullYear(), month.getMonth(), i + 1));
-              return <button key={key} disabled={key > today} className={`${date === key ? "selected" : ""} ${today === key ? "today" : ""}`} aria-label={`${key}${eventDates.has(key) ? ", has incidents" : ""}`} aria-pressed={date === key} onClick={() => { onDate(key); closeCalendar(); }}>{i + 1}{eventDates.has(key) && <i />}</button>;
+              return <button key={key} disabled={key > today} className={`${openIncidentDates.has(key) ? "has-open-incidents" : ""} ${footageDates.has(key) ? "has-footage" : ""} ${date === key ? "selected" : ""} ${today === key ? "today" : ""}`} aria-label={`${key}${footageDates.has(key) ? ", footage available" : ""}${openIncidentDates.has(key) ? ", open incidents" : eventDates.has(key) ? ", has incidents" : ""}`} aria-pressed={date === key} onClick={() => { onDate(key); closeCalendar(); }}>{i + 1}</button>;
             })}
           </div>
-          <div className="calendar-footer"><span><i />Incidents recorded</span><button onClick={() => { setMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1)); onDate(null); closeCalendar(); }}>Today</button></div>
+          <div className="calendar-footer"><button onClick={() => { setMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1)); onDate(today); closeCalendar(); }}>Today</button></div>
         </div>, document.body)}
       </details>
-      <div className="view-settings"><span className="view-settings-label">View</span><div className="layout-switch" role="group" aria-label="Camera layout">{layouts.map(({ id, label, Icon }) => <button key={id} aria-label={`${label} view`} aria-pressed={layout === id} className={layout === id ? "active" : ""} onClick={() => onLayout(id)}><Icon size={14} /><span>{label}</span></button>)}</div></div>
+
     </div>
   </div>;
+}
+
+export function CameraViewControls({ layout, onLayout }: { layout: CameraLayout; onLayout: (layout: CameraLayout) => void }) {
+  const layouts = [{ id: "single", label: "Single", Icon: Square }, { id: "grid", label: "Grid", Icon: Grid2X2 }, { id: "focus", label: "Focus", Icon: PanelLeft }] as const;
+  return (<div className="view-settings"><span className="view-settings-label">View</span><div className="layout-switch" role="group" aria-label="Camera layout">{layouts.map(({ id, label, Icon }) => <button key={id} aria-label={`${label} view`} aria-pressed={layout === id} className={layout === id ? "active" : ""} onClick={() => onLayout(id)}><Icon size={14} /><span>{label}</span></button>)}</div></div>);
 }

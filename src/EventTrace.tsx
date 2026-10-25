@@ -1,8 +1,9 @@
+import EventExport from "./EventExport";
+import { useEffect, useRef, useState } from "react";
+import { clockTime } from "./timecode";
 import TraceBadge from "./TraceBadge";
 import {
-  TriangleAlert,
   Check,
-  Clock3,
   CheckCheck,
   Phone,
   ScanLine,
@@ -26,7 +27,12 @@ export default function EventTrace({
   onAction,
   onSeek,
   onReport,
+  recordingStartedAt, onHover, onSelect, userId = "Local operator", cameraId = "camera", cameraThumbnail,
 }: {
+  userId?: string; cameraId?: string; cameraThumbnail?: string;
+  recordingStartedAt?: string;
+  onHover?: (id: string | null) => void;
+  onSelect?: (id: string) => void;
   state: LookoutState;
   room: number;
   selected: string | null;
@@ -34,9 +40,14 @@ export default function EventTrace({
   onSeek: (seconds: number) => void;
   onReport: (id: string) => void;
 }) {
-  const incidents = state.incidents;
+  const [filter, setFilter] = useState("All");
+  const root = useRef<HTMLElement>(null);
+  useEffect(() => { root.current?.querySelector(".trace-event.expanded")?.scrollIntoView({ block: "nearest", behavior: "instant" }); }, [selected]);
+  const statusOf = (status: string) => ["resolved", "dismissed", "closed"].includes(status) ? "Resolved" : status === "acknowledged" ? "In review" : "Open";
+  const incidents = state.incidents.filter(i => filter === "All" || statusOf(i.status) === filter);
+  const titleOf = (title: string) => title === "Motion near restricted area" ? "Someone near the doorway" : title === "Activity flagged for review" ? "Someone lowered quickly near the play area" : title;
   return (
-    <aside className="event-trace">
+    <aside className="event-trace" ref={root}>
       <header>
         <div>
           <ScanLine size={15} />
@@ -44,18 +55,23 @@ export default function EventTrace({
         </div>
         <span>{incidents.length.toString().padStart(2, "0")}</span>
       </header>
+      <div className="trace-filters" role="group" aria-label="Filter events">{["All", "Open", "Resolved"].map(value => <button key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{value}</button>)}</div>
       <div className="trace-scroll">
         {!incidents.length ? (
           <div className="trace-empty">
             <span className="quiet-orbit">
               {room === 2 ? <WifiOff size={18} /> : <Check size={18} />}
             </span>
-            <p>{room === 2 ? "Camera not connected" : "Things are chilling"}</p>
-            <span>{room === 2 ? "Waiting for a live feed." : "Recorded events will appear here."}</span>
+            <p>{room === 2 ? "Camera not connected" : "Nothing flagged on this day"}</p>
+            <span>{room === 2 ? "Waiting for a live feed." : filter === "All" ? "Events will appear here when something needs a look." : "No events match this filter."}</span>
           </div>
         ) : (
           incidents.map((incident) => {
             const expanded = selected === incident.id;
+            const startTime = incident.media_time_ms !== undefined && recordingStartedAt
+              ? clockTime(recordingStartedAt, incident.media_time_ms / 1000)
+              : new Date(typeof incident.opened_at === "number" ? incident.opened_at * 1000 : incident.opened_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+            const thumbnail = incident.evidence_url || cameraThumbnail;
             const attempts =
               state.attempts?.filter((a) => a.incident_id === incident.id) ||
               [];
@@ -64,36 +80,21 @@ export default function EventTrace({
                 key={incident.id}
                 className={`trace-event ${incident.priority === "critical" ? "critical" : ""} ${expanded ? "expanded" : ""}`}
               >
-                <div className="trace-summary">
-                  <div>
-                    <span className="trace-meta">
-                      <TraceBadge className="incident-badge"><TriangleAlert size={11} />Incident</TraceBadge>
-                      <TraceBadge className={`trace-status ${incident.status === "resolved" ? "resolved" : "pending"}`}>
-                        {incident.status === "resolved" ? <Check size={11} /> : <Clock3 size={11} />}
-                        {incident.status === "resolved" ? "Resolved" : "Pending"}
-                      </TraceBadge>
-                      <span className="trace-time-tags">
-                      {incident.media_time_ms === undefined ? <span>EVENT</span> : <>
-                        <TraceBadge className="trace-seek-tag" onClick={() => onSeek(incident.media_time_ms! / 1000)} aria-label={`Seek to start ${clock(incident.media_time_ms)}`}>{clock(incident.media_time_ms)}</TraceBadge>
-                        {incident.media_end_time_ms !== undefined && <TraceBadge className="trace-seek-tag" onClick={() => onSeek(incident.media_end_time_ms! / 1000)} aria-label={`Seek to end ${clock(incident.media_end_time_ms)}`}>{clock(incident.media_end_time_ms)}</TraceBadge>}
-                      </>}
-                      </span>
-                      {incident.origin !== "fixture" && <span>{incident.priority.toUpperCase()}</span>}
-                    </span>
-                    <div className="trace-title-row"><h3>{incident.title}</h3></div>
-                    {incident.assigned_responder &&
-                      (incident.status === "acknowledged" ||
-                        incident.status === "resolved") && (
-                        <span className="trace-owner">
-                          Handled by {incident.assigned_responder}
-                          {incident.acknowledged_via &&
-                            ` via ${incident.acknowledged_via}`}
-                        </span>
-                      )}
-                  </div>
-                </div>
+                <button className="trace-summary" aria-expanded={expanded} aria-controls={`trace-details-${incident.id}`} onClick={() => { onSelect?.(incident.id); if (incident.media_time_ms !== undefined) onSeek(incident.media_time_ms / 1000); }} onMouseEnter={() => onHover?.(incident.id)} onMouseLeave={() => onHover?.(null)} onFocus={() => onHover?.(incident.id)} onBlur={() => onHover?.(null)} onKeyDown={event => {
+                  if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
+                  event.preventDefault(); const rows = Array.from(root.current?.querySelectorAll<HTMLButtonElement>(".trace-summary") || []); rows[(rows.indexOf(event.currentTarget) + (event.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length]?.focus();
+                }}>
+                  {thumbnail ? <img className="trace-thumbnail" src={thumbnail} alt={`${incident.room} camera screenshot`} /> : <span className="trace-thumbnail" aria-label="Camera screenshot unavailable"><ScanLine size={18} /></span>}
+                  <span className="trace-row-content">
+                    <span className="trace-thread-heading"><strong>Incident</strong><time>{startTime}</time></span>
+                    <span className="trace-thread-description" title={titleOf(incident.title)}>{titleOf(incident.title)}</span>
+                  </span>
+                </button>
                 {expanded && (
                   <div className="trace-detail" id={`trace-details-${incident.id}`}>
+                    <span className={`trace-status-word status-${statusOf(incident.status).toLowerCase().replace(" ", "-")}`}><i />{statusOf(incident.status)}{incident.origin === "fixture" && " · Demo"}</span>
+                    {incident.assigned_responder && <p>Handled by {incident.assigned_responder}{incident.resolved_at && ` · ${new Date(incident.resolved_at).toLocaleString()}`}</p>}
+                    <p>Detection confidence: not supplied</p>
                     {incident.observations.map((observation, index) => <p key={index}>{observation}</p>)}
                     <div className="trace-response-log">
                       {incident.demo_response ? incident.demo_response.map((step, index) => <div className="trace-activity-step" key={index}>
@@ -199,6 +200,7 @@ export default function EventTrace({
                         <figcaption>Evidence clip · 5 s before to 5 s after · heads blurred</figcaption>
                       </figure>
                     )}
+                    <EventExport incident={incident} cameraId={cameraId} userId={userId} />
                     <div className="trace-actions">
                       {incident.status === "open" && (
                         <button

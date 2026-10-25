@@ -3,6 +3,8 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import DesignSystem from "./DesignSystem";
 import "./styles.css";
+import "./tokens.css";
+import "./review.css";
 const Agentation = import.meta.env.DEV
   ? lazy(() => import("agentation").then(module => ({ default: module.Agentation })))
   : null;

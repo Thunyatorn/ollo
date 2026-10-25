@@ -1,25 +1,27 @@
 import { useRef, useState } from "react";
 
-const stamp = (seconds: number) => `${Math.floor(seconds / 60).toString().padStart(2, "0")}:${Math.floor(seconds % 60).toString().padStart(2, "0")}`;
-export default function PlaybackTime({ position, duration, disabled, onSeek }: { position: number; duration: number; disabled: boolean; onSeek: (seconds: number) => void }) {
+import { formatPlaybackTime, parsePlaybackTime } from "./timecode";
+export function PlaybackLiveLabel() {
+  return <span className="playback-live-label" aria-label="Live footage"><i aria-hidden="true" />LIVE</span>;
+}
+export default function PlaybackTime({ position, duration, disabled, live = false, onSeek }: { position: number; duration: number; disabled: boolean; live?: boolean; onSeek: (seconds: number) => void }) {
   const [draft, setDraft] = useState<string | null>(null);
   const [invalid, setInvalid] = useState(false);
   const cancelBlur = useRef(false);
   const commit = () => {
     if (draft === null) return;
-    const text = draft.trim();
-    const valid = /^\d+(?:\.\d+)?$/.test(text) || /^\d+:([0-5]?\d)(?:\.\d+)?$/.test(text);
-    if (!valid) { setInvalid(true); return; }
-    const parts = text.split(":").map(Number);
-    const seconds = parts.length === 2 ? parts[0] * 60 + parts[1] : parts[0];
-    onSeek(Math.max(0, Math.min(duration, seconds)));
-    setDraft(null); setInvalid(false);
+    const seconds = parsePlaybackTime(draft, duration);
+    if (seconds === null) {
+      setInvalid(true);
+      window.setTimeout(() => setInvalid(false), 180);
+    } else onSeek(seconds);
+    setDraft(formatPlaybackTime(seconds ?? position, duration));
   };
-  return <div className="timecode seek-timecode">{disabled ? <span>LIVE / NOT CONNECTED</span> : <>
-    <input aria-label="Playback time" aria-invalid={invalid} title="Enter minutes:seconds or seconds to seek" value={draft ?? stamp(position)} onFocus={event => { setDraft(stamp(position)); event.currentTarget.select(); }} onChange={event => { setDraft(event.target.value); setInvalid(false); }} onBlur={() => { if (!cancelBlur.current) commit(); cancelBlur.current = false; setDraft(null); setInvalid(false); }} onKeyDown={event => {
-      if (event.key === "Enter") { event.preventDefault(); commit(); }
+  return <div className="timecode seek-timecode">{live || disabled ? <PlaybackLiveLabel /> : <>
+    <input aria-label="Current time. Type a time to jump." inputMode="numeric" aria-invalid={invalid} title="Enter minutes:seconds or seconds to seek" value={draft ?? formatPlaybackTime(position, duration)} onFocus={event => { setDraft(formatPlaybackTime(position, duration)); event.currentTarget.select(); }} onChange={event => { setDraft(event.target.value); setInvalid(false); }} onBlur={() => { if (!cancelBlur.current) commit(); cancelBlur.current = false; setDraft(null); }} onKeyDown={event => {
+      if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); }
       if (event.key === "Escape") { cancelBlur.current = true; setDraft(null); setInvalid(false); event.currentTarget.blur(); }
     }} spellCheck={false} />
-    <span className="playback-duration" aria-label="Video duration">{stamp(duration)}</span>
+    <span className="playback-duration" aria-label={`Duration, ${Math.floor(duration / 60)} minutes ${Math.floor(duration % 60)} seconds`}>{formatPlaybackTime(duration, duration)}</span>
   </>}</div>;
 }
