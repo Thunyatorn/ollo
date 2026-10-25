@@ -237,3 +237,16 @@ async def test_a_later_attempt_hangs_up_an_earlier_one_that_is_still_ringing(std
     assert calls.placed == ["call_1", "call_2"]
     assert calls.hung_up == [("call_1", "CA_call_1")]                       # one phone, one call at a time
     assert {j["id"]: j["status"] for j in stdb.t["call_job"]} == {"call_1": "failed", "call_2": "ringing"}
+
+
+async def test_the_backup_also_gets_a_text_with_the_key_frame(stdb, settings, clock):
+    from nestwatch_worker.calls import SimulatedTexts
+    make_alert(stdb, status="escalated")
+    queue_call(stdb)
+    w = worker(stdb, settings, clock)
+    w.texts = SimulatedTexts()
+    w.keyframes.put(stdb.t["alert"][0]["clipRef"], [b"\xff\xd8frame"])
+    await w.poll()
+    await w.idle()
+    assert [(last4, img) for last4, _, img in w.texts.sent] == [(w.texts.sent[0][0], True)]
+    assert "nobody has answered yet" in w.texts.sent[0][1]

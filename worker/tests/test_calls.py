@@ -5,7 +5,7 @@ import httpx
 import pytest
 
 from nestwatch_worker.calls import (NotRetryable, TwilioCalls, call_message, twilio_outcome, twilio_signature,
-                                    valid_twilio_signature)
+                                    valid_twilio_signature, TelegramTexts, TwilioTexts)
 
 
 def test_message_has_place_and_time_but_no_names_or_tracks():
@@ -141,3 +141,32 @@ async def test_a_refusal_from_cartesia_says_why(settings):
     calls = make_twilio(settings, lambda req: httpx.Response(402, json={"error": "out of credits"}))
     with pytest.raises(RuntimeError, match="cartesia.*402.*out of credits"):
         await calls.place("call_7", "+15550000002", "hi", on_result=None)
+
+
+async def test_a_text_falls_back_to_an_image_link_when_attachments_are_refused(settings):
+    settings.twilio_sid, settings.twilio_token, settings.twilio_from = "AC1", "tok", "+15550009999"
+    settings.public_base_url = "https://x.example"
+    bodies = []
+
+    def handler(req):
+        form = dict(p.split("=", 1) for p in req.content.decode().split("&"))
+        bodies.append(form)
+        return httpx.Response(400 if "MediaUrl" in form else 201, json={"message": "trial"})
+    texts = TwilioTexts(settings, httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    await texts.send("+15550001111", "hello", b"\xff\xd8x")
+    assert "MediaUrl" in bodies[0] and "MediaUrl" not in bodies[1] and "%2Fmedia%2F" in bodies[1]["Body"]
+
+
+async def test_telegram_sends_the_key_frame_to_everyone_who_pressed_start(settings):
+    settings.telegram_token, settings.telegram_chat_id = "123:abc", ""
+    seen = []
+
+    def handler(req):
+        seen.append(req.url.path)
+        if req.url.path.endswith("/getUpdates"):
+            return httpx.Response(200, json={"result": [{"message": {"chat": {"id": 7}}}, {"message": {"chat": {"id": 7}}}, {"edited": 1}]})
+        return httpx.Response(200, json={"ok": True})
+    t = TelegramTexts(settings, httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    await t.send("+15550001111", "hello", b"\xff\xd8x")
+    await t.send("+15550001111", "again")
+    assert seen == ["/bot123:abc/getUpdates", "/bot123:abc/sendPhoto", "/bot123:abc/sendMessage"]

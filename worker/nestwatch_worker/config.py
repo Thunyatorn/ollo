@@ -56,6 +56,8 @@ class Settings:
     cartesia_agent_id: str = field(default_factory=lambda: _env("CARTESIA_AGENT_ID"))
     cartesia_from_number_id: str = field(default_factory=lambda: _env("CARTESIA_FROM_NUMBER_ID"))
     voice_webhook_secret: str = field(default_factory=lambda: _env("VOICE_WEBHOOK_SECRET"))
+    telegram_token: str = field(default_factory=lambda: _env("TELEGRAM_BOT_TOKEN"))
+    telegram_chat_id: str = field(default_factory=lambda: _env("TELEGRAM_CHAT_ID"))   # optional, comma-separated; default: everyone who pressed Start
     sim_outcome: str = field(default_factory=lambda: _env("SIM_CALL_OUTCOME", "no_answer"))   # no_answer | press1 | error
     sim_ring_s: float = field(default_factory=lambda: float(_env("SIM_RING_S", "6")))
     call_retries: int = 1                 # one retry when placing a call fails outright (CLUADE.md failure table)

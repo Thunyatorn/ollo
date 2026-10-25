@@ -196,6 +196,14 @@ def create_app(worker, checker, keyframes, settings, start_loop: bool = True, wa
             raise HTTPException(404, "no such audio (it expires after 15 minutes)")
         return Response(wav, media_type="audio/wav", headers={"Cache-Control": "no-store"})
 
+    @app.get("/media/{token}")
+    def media(token: str):
+        texts = worker.texts
+        jpeg = texts.media_for(token) if hasattr(texts, "media_for") else None
+        if jpeg is None:
+            raise HTTPException(404, "no such image (it expires after 15 minutes)")
+        return Response(jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
     @app.post("/webhooks/voice/ack")
     async def voice_ack(request: Request, body: dict = Body(...)):
         """The Cartesia voice agent's webhook tool `acknowledge_alert`: {token, decision: acknowledge | decline}."""

@@ -289,7 +289,7 @@ Every outside service is called only by the worker, and each one receives the le
 | --- | --- | --- | --- |
 | Claude API | Second opinions, rule drafts, incident reports, daily summaries | Event logs, blurred key frames, rule text, named areas | Live video, unblurred images, phone numbers |
 | Cartesia | Speaks the escalation message | The message text, such as "A child entered the stairs area 20 seconds ago. Press 1 if you're on it." | Images, names of children |
-| Twilio | Places the call and reports the key press | The backup caregiver's phone number and the audio link | Images, event logs |
+| Twilio | Places the call, reports the key press, and texts the alert | The backup caregiver's phone number, the audio link, the alert sentence and one blurred key frame (15-minute link) | Unblurred images, event logs |
 | Moss (optional) | Understands spoken replies during the call | Call audio | Images, event logs |
 | Apify | Collects recall notices for children's products | Nothing from ollo; it scrapes public recall listings | Any daycare data |
 

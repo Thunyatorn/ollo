@@ -27,8 +27,9 @@ OPEN_FOR_OPINION = ("open", "notified", "escalated")
 
 
 class Worker:
-    def __init__(self, stdb: Spacetime, settings, claude: ai.Claude | None, calls, keyframes: KeyframeStore, clock=time.time):
+    def __init__(self, stdb: Spacetime, settings, claude: ai.Claude | None, calls, keyframes: KeyframeStore, clock=time.time, texts=None):
         self.stdb, self.s, self.claude, self.calls, self.keyframes, self.clock = stdb, settings, claude, calls, keyframes, clock
+        self.texts = texts
         self.started_at = clock()
         self.live_calls: dict[str, str | None] = {}     # job id -> provider call id, while the call is in progress
         self._job_alert: dict[str, str] = {}            # job id -> alert id
@@ -156,6 +157,10 @@ class Worker:
         names = {c["id"]: c["name"] for c in await self.stdb.sql("SELECT id, name FROM caregiver")}
         info = {"room": rooms[0]["name"] if rooms else "the room", "alert": call_phrase(alert, zone, self.clock()),
                 "caregiver": names.get(job["caregiverId"], "caregiver"), "alert_id": alert["id"], "caregiver_id": job["caregiverId"]}
+        if self.texts:                                          # the text goes out beside the call, never instead of it
+            frames = self.keyframes.get(alert["clipRef"])
+            self.spawn(self.send_text(contact["phone"], f"ollo: {info['alert']} and nobody has answered yet.", frames[0] if frames else None),
+                       f"text {jid}")
         delays = self.s.call_retry_delays_s
         self._job_alert[jid] = alert["id"]
         for older, call_id in [(j, c) for j, c in self.live_calls.items() if j != jid and self._job_alert.get(j) == alert["id"]]:
@@ -184,6 +189,12 @@ class Worker:
         self.live_calls.pop(jid, None)
         self.stats["calls_failed"] += 1
         await self.set_job(jid, "failed")                       # escalation goes on: the timer still fires, the alarm sounds
+
+    async def send_text(self, phone: str, body: str, image: bytes | None) -> None:
+        try:
+            await self.texts.send(phone, body, image)
+        except Exception as e:
+            log.warning("could not send the text: %s", e)
 
     async def set_job(self, job_id: str, status: str) -> None:
         try:
