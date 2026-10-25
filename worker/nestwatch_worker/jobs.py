@@ -27,9 +27,12 @@ OPEN_FOR_OPINION = ("open", "notified", "escalated")
 
 
 class Worker:
-    def __init__(self, stdb: Spacetime, settings, claude: ai.Claude | None, calls, keyframes: KeyframeStore, clock=time.time, texts=None):
+    def __init__(self, stdb: Spacetime, settings, claude: ai.Claude | None, calls, keyframes: KeyframeStore, clock=time.time, texts=None,
+                 family=None):
         self.stdb, self.s, self.claude, self.calls, self.keyframes, self.clock = stdb, settings, claude, calls, keyframes, clock
         self.texts = texts
+        self.family = family                            # elder care: Telegram buttons on a fall (family.py)
+        self._family_seen: set[str] = set()
         self.started_at = clock()
         self.live_calls: dict[str, str | None] = {}     # job id -> provider call id, while the call is in progress
         self._job_alert: dict[str, str] = {}            # job id -> alert id
@@ -64,6 +67,8 @@ class Worker:
             await asyncio.gather(*list(self._tasks), return_exceptions=True)
 
     async def run(self) -> None:
+        if self.family and hasattr(self.family, "poll_updates"):
+            self.spawn(self.family.poll_updates(), "telegram updates")
         while True:
             try:
                 await self.poll()
@@ -119,6 +124,9 @@ class Worker:
                     self.spawn(self.calls.hang_up(j["id"], call_id), f"hang up {j['id']}")
 
         for a in alerts:
+            if self.family and a["eventType"] == "fall" and a["id"] not in self._family_seen and now - a["createdAt"] < 600:
+                self._family_seen.add(a["id"])
+                self.spawn(self.family.on_alert(a), f"family {a['id']}")
             if (a["severity"] in ("medium", "low") and a["status"] in OPEN_FOR_OPINION and a["id"] not in self._opinion_done
                     and now - a["createdAt"] < 600):
                 frames = self.keyframes.get(a["clipRef"])

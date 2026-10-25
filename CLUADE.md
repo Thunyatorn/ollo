@@ -161,6 +161,7 @@ An alert jumps to `owned` from `notified`, `escalated` or `unanswered` as soon a
 | `save_zone_draft(...)`, `confirm_zone(zone_id)`, `update_zone(...)` | Worker (drafts), dashboard and phone (confirm, edit) | Drafts stay inactive until a person confirms |
 | `tag_adult(track_id, caregiver_id)` | Vision service | Marks a track as an adult |
 | `update_call_job(job_id, status)` | Worker | Records ringing, answered or failed |
+| `log_family_event(alert_id, kind, text)` | Worker | Records a family action on the alert's timeline: `report_sent`, `ambulance_called` or `family_action_failed` |
 | `camera_health(camera_id, status)` | Vision service | Online, offline, low frame rate |
 
 **Identity checks:** each function checks who is calling. Only the vision service may write positions and events, only the worker may write reports, urgency and call results, and only signed-in caregivers may acknowledge, confirm zones and add notes.
@@ -213,6 +214,37 @@ The worker is the only component that holds API keys and talks to outside servic
 | `GET /health` | Monitoring | Connections to Spacetime, Claude, Cartesia and Twilio |
 
 Twilio webhooks are checked with Twilio's request signature, and the app endpoints require a signed-in caregiver.
+
+### Family emergency actions (elder care, Telegram)
+
+For an older person at home alone. When a fall is detected, the family hears about it at once in Telegram, and from that message can send the hospital a report and call an ambulance. The worker runs it; nothing here is on the alert path, and the escalation call to the backup still happens as usual.
+
+**Settings** (`worker/.env`, all optional; anything missing turns off only the part that needs it):
+
+| Setting | Meaning |
+| --- | --- |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | The bot, and the family chats allowed to press the buttons (comma-separated). Without `TELEGRAM_CHAT_ID` the message is still sent to whoever pressed Start, but the buttons are refused |
+| `PATIENT_NAME`, `HOME_ADDRESS`, `HOME_LAT`, `HOME_LON` | Who and where. Without coordinates, the address is geocoded once with OpenStreetMap Nominatim |
+| `MEDICAL_RECORD_FILE` | Path to her medical record (any file type), attached to the hospital report. Use a made-up record for the demo |
+| `HOSPITAL_NAME`, `HOSPITAL_ADDRESS`, `HOSPITAL_EMAIL` | Her usual hospital |
+| `HOSPITAL_FALLBACK_EMAIL` | Where the report goes when the chosen hospital has no known email (the demo's stand-in) |
+| `SMTP_HOST`, `SMTP_PORT` (587), `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | The mail account that sends reports (STARTTLS) |
+| `REPORT_TO` | Demo override: every report goes to this address instead of any hospital (the hospital is only named in it). Set it until a hospital has agreed to receive reports |
+| `AMBULANCE_LIVE` | `false` by default: the ambulance button never dials, and the chat shows what the call would say. Only `true` places the call |
+| `AMBULANCE_NUMBER` | The number "Call ambulance" rings, in +E.164 form. Short emergency numbers such as 911 are refused: software must not dial emergency services. For the demo this is a teammate playing dispatch |
+
+**Acceptance:**
+
+1. **Fall message.** Within 2 s of a new `fall` alert, every family chat gets one message: the alert's first key frame as a photo when it arrives within 3 s (else text only), and the caption "ollo: possible fall — ⟨name⟩ at ⟨address⟩, ⟨time⟩. Hospital: ⟨hospital⟩ (usual, or nearest at ⟨n⟩ km)". It carries two buttons: **🏥 Send report to hospital** and **🚑 Call ambulance**. One message per alert, even when the alert is reported again.
+2. **Hospital choice.** The usual hospital when `HOSPITAL_NAME` is set; otherwise the nearest OpenStreetMap hospital with `emergency=yes` within 25 km of home (OpenStreetMap receives only the home coordinates). The lookup is cached; if it fails, the message says "hospital: not found" and the report goes to `HOSPITAL_FALLBACK_EMAIL`.
+3. **Send report.** One email to `REPORT_TO` when set (never a hospital then), else the chosen hospital's email, else the fallback: subject "ollo fall report: ⟨name⟩, ⟨time⟩"; the body holds name, address, the alert's time and the incident timeline; attached are the medical record file and the blurred fall clip from the vision service (`GET /clips/{clip_ref}`, waiting up to 20 s for it to finish recording; without it the email says the clip is not available). The chat is told where it went and what was attached.
+4. **Call ambulance, two taps.** The first tap only asks, in the chat: "Call the ambulance line (…⟨last 4⟩) to ⟨address⟩? This is a real phone call." with **Yes, call now** and **Cancel**. Only **Yes** within 2 minutes places one call to `AMBULANCE_NUMBER` with the spoken message: "This is ollo, an automated emergency request. ⟨name⟩ may have fallen at ⟨address⟩ at ⟨time⟩ and has not been confirmed safe. Her usual hospital is ⟨hospital⟩." The chat is told the call was placed, or why it failed. Unless `AMBULANCE_LIVE=true`, **Yes** places no call: the chat gets "🚑 Demo: no call placed. The ambulance line would hear: ⟨the message⟩", and the timeline records the demo.
+5. **Once each.** Each action runs at most once per alert; pressing again answers "already done at ⟨time⟩".
+6. **Who may press.** Buttons pressed from a chat not in `TELEGRAM_CHAT_ID` do nothing and answer "not allowed".
+7. **Record.** Each action is written to the alert's incident timeline (`log_family_event`, kinds `report_sent`, `ambulance_called`, `family_action_failed`).
+8. **Testing.** Mocked HTTP and a fake mail sender; tests never send email, Telegram messages or calls.
+
+Tests: `worker/tests/test_family.py`.
 
 ### Claude tools
 
@@ -292,6 +324,9 @@ Every outside service is called only by the worker, and each one receives the le
 | Twilio | Places the call, reports the key press, and texts the alert | The backup caregiver's phone number, the audio link, the alert sentence and one blurred key frame (15-minute link) | Unblurred images, event logs |
 | Moss (optional) | Understands spoken replies during the call | Call audio | Images, event logs |
 | Apify | Collects recall notices for children's products | Nothing from ollo; it scrapes public recall listings | Any daycare data |
+| Telegram | Tells the family about a fall and takes their button presses | The alert sentence, name, address, hospital and one blurred key frame | Medical records, clips |
+| Email (SMTP) | Sends the hospital report, only when a family member presses the button | Name, address, the incident timeline, the medical record file and the blurred fall clip | Unblurred video, key frames of other events |
+| OpenStreetMap | Geocodes the home address and finds the nearest emergency hospital | The home address or coordinates | Names, medical data, images |
 
 **Model choice:** use a fast, low-cost Claude model for second opinions, where speed matters, and a stronger one for reports and rule drafts, where quality matters more than a few seconds.
 
@@ -454,6 +489,7 @@ Each component protects the data it holds and fails in a way that keeps alerts r
 | The worker is down | Alerts, buzzer and screens still work; calls fall back to the local alarm at the unanswered step | Health check |
 | Claude is slow or down | Second opinions are skipped; reports are written later | Nobody needs to act |
 | Twilio or Cartesia fails | One retry, then the local alarm and all-staff notification | `call_job` shows failed |
+| Telegram, email or the ambulance call fails | The chat is told what failed; the escalation call and local alarm are unaffected; the failure is logged on the incident | Family in Telegram, incident timeline |
 | A buzzer's battery dies | It disconnects; the dashboard shows it, and alerts still reach the phone app | Dashboard caregiver list |
 
 ## Open questions

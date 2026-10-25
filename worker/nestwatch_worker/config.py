@@ -58,6 +58,25 @@ class Settings:
     voice_webhook_secret: str = field(default_factory=lambda: _env("VOICE_WEBHOOK_SECRET"))
     telegram_token: str = field(default_factory=lambda: _env("TELEGRAM_BOT_TOKEN"))
     telegram_chat_id: str = field(default_factory=lambda: _env("TELEGRAM_CHAT_ID"))   # optional, comma-separated; default: everyone who pressed Start
+    # Family emergency actions (CLUADE.md "Family emergency actions"): elder at home, family in Telegram.
+    patient_name: str = field(default_factory=lambda: _env("PATIENT_NAME"))
+    home_address: str = field(default_factory=lambda: _env("HOME_ADDRESS"))
+    home_lat: str = field(default_factory=lambda: _env("HOME_LAT"))
+    home_lon: str = field(default_factory=lambda: _env("HOME_LON"))
+    medical_record_file: str = field(default_factory=lambda: _env("MEDICAL_RECORD_FILE"))
+    hospital_name: str = field(default_factory=lambda: _env("HOSPITAL_NAME"))
+    hospital_address: str = field(default_factory=lambda: _env("HOSPITAL_ADDRESS"))
+    hospital_email: str = field(default_factory=lambda: _env("HOSPITAL_EMAIL"))
+    hospital_fallback_email: str = field(default_factory=lambda: _env("HOSPITAL_FALLBACK_EMAIL"))
+    smtp_host: str = field(default_factory=lambda: _env("SMTP_HOST"))
+    smtp_port: int = field(default_factory=lambda: int(_env("SMTP_PORT", "587")))
+    smtp_user: str = field(default_factory=lambda: _env("SMTP_USER"))
+    smtp_password: str = field(default_factory=lambda: _env("SMTP_PASSWORD"))
+    smtp_from: str = field(default_factory=lambda: _env("SMTP_FROM"))
+    ambulance_number: str = field(default_factory=lambda: _env("AMBULANCE_NUMBER"))
+    ambulance_live: bool = field(default_factory=lambda: _flag("AMBULANCE_LIVE"))     # false: the button never dials
+    report_to: str = field(default_factory=lambda: _env("REPORT_TO"))                 # demo: every report goes here, never a hospital
+    vision_http: str = field(default_factory=lambda: _env("VISION_HTTP", "http://127.0.0.1:8000").rstrip("/"))
     sim_outcome: str = field(default_factory=lambda: _env("SIM_CALL_OUTCOME", "no_answer"))   # no_answer | press1 | error
     sim_ring_s: float = field(default_factory=lambda: float(_env("SIM_RING_S", "6")))
     call_retries: int = 1                 # one retry when placing a call fails outright (CLUADE.md failure table)
